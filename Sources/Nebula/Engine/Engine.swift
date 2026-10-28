@@ -11,6 +11,13 @@ struct LatencyStats: Equatable {
     var captureAge = Percentiles([])
 }
 
+/// What the camera sees right now, published only while a screen is showing it.
+@MainActor
+final class LiveFeed: ObservableObject {
+    @Published var snapshot = LiveSnapshot()
+    var watching = false
+}
+
 /// Nebula's state, owned by the main thread. The pipeline does the per-frame work on its
 /// own queue; this decides when the camera is on and keeps the screens up to date.
 @MainActor
@@ -27,7 +34,10 @@ final class Engine: ObservableObject {
 
     @Published private(set) var arming: Arming = .off
     @Published var settings = NebulaSettings.load() { didSet { settingsChanged(oldValue) } }
-    @Published private(set) var live = LiveSnapshot()
+    /// The live hand, for the Practice stage only. Kept out of the engine's own published state:
+    /// publishing it here redrew every screen 30 times a second, competing with the camera.
+    let liveFeed = LiveFeed()
+    var live: LiveSnapshot { liveFeed.snapshot }
     @Published private(set) var latency = LatencyStats()
     @Published private(set) var cameraProblem: String?
     @Published private(set) var lightWarning: String?
@@ -86,7 +96,10 @@ final class Engine: ObservableObject {
             }
         }
         pipeline.router = router
-        pipeline.onSnapshot = { [weak self] snap in self?.live = snap }
+        pipeline.onSnapshot = { [weak self] snap in
+            guard let feed = self?.liveFeed, feed.watching else { return }
+            feed.snapshot = snap
+        }
         pipeline.onEvent = { [weak self] event in self?.observe(event) }
         applyRecognizer()
     }
@@ -200,7 +213,7 @@ final class Engine: ObservableObject {
         setActions(false)
         if recorder.running { recorder.stop() }
         pipeline.stop()
-        live = LiveSnapshot()
+        liveFeed.snapshot = LiveSnapshot()
     }
 
     private func setActions(_ on: Bool) {

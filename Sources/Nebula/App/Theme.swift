@@ -51,7 +51,7 @@ enum Theme {
 
 /// Deep ground, a slow cloud of violet and teal, a few fixed stars, and Orbit's faint ruled grid
 /// fading out from the top. Brighter while Nebula is on.
-struct NebulaBackdrop: View {
+struct NebulaBackdrop: View, Equatable {
     var lit = false
 
     var body: some View {
@@ -68,6 +68,7 @@ struct NebulaBackdrop: View {
                 .mask(RadialGradient(colors: [.black, .clear], center: .top, startRadius: 0, endRadius: 520))
                 .opacity(0.5)
         }
+        .drawingGroup() // one flattened layer: drawn once, not re-composited with every change above it
         .animation(.easeInOut(duration: 0.8), value: lit)
         .allowsHitTesting(false)
     }

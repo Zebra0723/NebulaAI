@@ -58,6 +58,12 @@ struct GesturesView: View {
                           : "\(live) of \(Gesture.count) gestures ready. Press fn F1 to turn on; the camera stays off until you do.")
                     .font(Theme.body(13)).foregroundStyle(Theme.ink2)
                     .fixedSize(horizontal: false, vertical: true)
+                if let warning = engine.lightWarning {
+                    // Fewer frames means fewer looks at each gesture: the commonest cause of misses.
+                    Label(warning, systemImage: "lightbulb")
+                        .font(Theme.body(12.5, weight: .medium)).foregroundStyle(Theme.warn)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
             Spacer(minLength: 12)
             if noneYet {

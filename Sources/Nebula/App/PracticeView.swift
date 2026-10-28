@@ -4,6 +4,7 @@ import SwiftUI
 struct PracticeView: View {
     @ObservedObject var engine: Engine
     @ObservedObject var recorder: Recorder
+    @ObservedObject var feed: LiveFeed
     @State private var plan: Recorder.Plan = .quickStart
     @State private var conditions = Recorder.Conditions()
 
@@ -33,6 +34,11 @@ struct PracticeView: View {
                 .frame(width: 340)
                 .background(Theme.ground.opacity(0.45))
         }
+        .onAppear { feed.watching = true }
+        .onDisappear {
+            feed.watching = false
+            feed.snapshot = LiveSnapshot()
+        }
     }
 
     // MARK: - The live hand
@@ -41,11 +47,11 @@ struct PracticeView: View {
         ZStack {
             RoundedRectangle(cornerRadius: 20, style: .continuous).fill(engine.flash ? Color.white : Theme.ground.opacity(0.7))
             RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .fill(RadialGradient(colors: [(engine.live.status.agreed > 0 ? Theme.contact : Theme.violet).opacity(engine.isCameraOn ? 0.16 : 0.08), .clear],
+                .fill(RadialGradient(colors: [(feed.snapshot.status.agreed > 0 ? Theme.contact : Theme.violet).opacity(engine.isCameraOn ? 0.16 : 0.08), .clear],
                                      center: .center, startRadius: 0, endRadius: 380))
-                .animation(.easeOut(duration: 0.3), value: engine.live.status.agreed > 0)
+                .animation(.easeOut(duration: 0.3), value: feed.snapshot.status.agreed > 0)
             if engine.isCameraOn {
-                SkeletonView(snapshot: engine.live).padding(18)
+                SkeletonView(snapshot: feed.snapshot).padding(18)
             } else {
                 VStack(spacing: 12) {
                     NebulaGlyph().frame(width: 36, height: 36)
@@ -62,8 +68,8 @@ struct PracticeView: View {
                 HStack {
                     if engine.isCameraOn { verdict }
                     Spacer()
-                    if engine.live.status.holdGesture >= 0 {
-                        HoldRing(progress: Double(engine.live.status.holdProgress), lineWidth: 4).frame(width: 46, height: 46)
+                    if feed.snapshot.status.holdGesture >= 0 {
+                        HoldRing(progress: Double(feed.snapshot.status.holdProgress), lineWidth: 4).frame(width: 46, height: 46)
                     }
                 }
                 Spacer()
@@ -72,13 +78,13 @@ struct PracticeView: View {
             .padding(18)
         }
         .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous)
-            .strokeBorder(engine.live.status.agreed > 0 ? Theme.contact.opacity(0.5) : Theme.ink.opacity(0.1), lineWidth: 1))
+            .strokeBorder(feed.snapshot.status.agreed > 0 ? Theme.contact.opacity(0.5) : Theme.ink.opacity(0.1), lineWidth: 1))
         .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
         .aspectRatio(4.0 / 3.0, contentMode: .fit)
     }
 
     private var verdict: some View {
-        let s = engine.live.status
+        let s = feed.snapshot.status
         let agreed = s.agreed > 0 ? (Pose(rawValue: s.agreed)?.name ?? "custom") : nil
         return VStack(alignment: .leading, spacing: 4) {
             Text(agreed.map { "Sees: \($0)" } ?? (s.handVisible ? "Sees a hand" : rejectionText(s.rejection)))
@@ -130,7 +136,7 @@ struct PracticeView: View {
             Gauge3(title: "Recognizer", subtitle: "features, judges, decision", p: l.recognizer, target: 2, note: nil)
             VStack(alignment: .leading, spacing: 6) {
                 Eyebrow("Camera")
-                Text(String(format: "%.0f fps", engine.live.fps)).font(Theme.numeral(22))
+                Text(String(format: "%.0f fps", feed.snapshot.fps)).font(Theme.numeral(22))
                 Text(engine.pipeline.resolution).font(Theme.mono(10.5)).foregroundStyle(Theme.ink3)
                 Text(String(format: "camera age p50 %.0f ms", l.captureAge.p50)).font(Theme.mono(10.5)).foregroundStyle(Theme.ink3)
             }

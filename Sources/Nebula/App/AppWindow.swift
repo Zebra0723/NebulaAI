@@ -77,7 +77,7 @@ struct RootView: View {
                 switch navigation.section {
                 case .gestures: GesturesView(engine: engine, navigation: navigation)
                 case .create: CreateView(engine: engine)
-                case .practice: PracticeView(engine: engine, recorder: engine.recorder)
+                case .practice: PracticeView(engine: engine, recorder: engine.recorder, feed: engine.liveFeed)
                 case .settings: SettingsView(engine: engine)
                 }
             }
@@ -86,7 +86,7 @@ struct RootView: View {
             .id(navigation.section)
         }
         .animation(.easeOut(duration: 0.18), value: navigation.section)
-        .background(NebulaBackdrop(lit: engine.isArmed))
+        .background(NebulaBackdrop(lit: engine.isArmed).equatable())
         .ignoresSafeArea()
         .foregroundStyle(Theme.ink)
         .tint(Theme.contact)
