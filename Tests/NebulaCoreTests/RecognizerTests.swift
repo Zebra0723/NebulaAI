@@ -181,4 +181,25 @@ final class RecognizerTests: XCTestCase {
             XCTAssertTrue(steps.allSatisfy { $0 == sign })
         }
     }
+
+    // MARK: Trial mode
+
+    func testTrialModeLetsASureJudgeAActWhenJudgeBKnowsNothing() {
+        let untrained = Bootstrap.emptyModel() // Judge B says "nothing" to everything
+        let strict = Recognizer(model: untrained)
+        XCTAssertTrue(TestKit.fires(TestKit.run(strict, from: 0, seconds: 1) { _ in [TestKit.hand(.thumbsUp)] }).isEmpty,
+                      "strict: both judges must agree")
+        let trial = Recognizer(model: untrained, lenient: true)
+        XCTAssertEqual(TestKit.fires(TestKit.run(trial, from: 0, seconds: 1) { _ in [TestKit.hand(.thumbsUp)] }).map(\.1),
+                       [Gesture.thumbsUp.index])
+    }
+
+    func testTrialModeStillIgnoresOrdinaryHands() {
+        let trial = Recognizer(model: Bootstrap.emptyModel(), lenient: true)
+        var events: [(Double, RecognizerEvent)] = []
+        for (i, kind) in [ShapeKind.relaxed, .typing, .fist, .claw, .phone, .restingOpen].enumerated() {
+            events += TestKit.run(trial, from: Double(i), seconds: 1) { _ in [TestKit.hand(kind, seed: UInt64(i + 3))] }
+        }
+        XCTAssertTrue(TestKit.fires(events).isEmpty, "\(TestKit.fires(events))")
+    }
 }

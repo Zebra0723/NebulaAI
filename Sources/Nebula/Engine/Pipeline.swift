@@ -154,8 +154,8 @@ final class Pipeline: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate, @u
     }
 
     /// Swaps in a new recognizer (new model, custom gestures, switches) between frames.
-    func use(model: NebulaModel, customs: [CustomGesture], disabled: Set<String>) {
-        let next = Recognizer(model: model, customs: customs)
+    func use(model: NebulaModel, customs: [CustomGesture], disabled: Set<String>, lenient: Bool = false) {
+        let next = Recognizer(model: model, customs: customs, lenient: lenient)
         for g in Gesture.allCases where disabled.contains(g.rawValue) { next.setEnabled(g.index, false) }
         for (i, c) in customs.enumerated() where disabled.contains(c.id) || !c.enabled {
             next.setEnabled(Recognizer.customBase + i, false)

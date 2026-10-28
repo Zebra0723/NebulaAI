@@ -151,7 +151,13 @@ public final class Recognizer {
     /// Custom gestures share the pose table with the ten built-in poses, sixteen at most.
     public static let maxCustoms = 6
 
-    public init(model: NebulaModel, customs: [CustomGesture] = []) {
+    /// Trial mode: Judge A may decide on its own when it's sure and Judge B has no opinion
+    /// (an untrained or thinly trained B mostly says "nothing"), and B needs less certainty.
+    /// More gestures get through; so do more mistakes. Off unless you choose trial mode.
+    public let lenient: Bool
+
+    public init(model: NebulaModel, customs: [CustomGesture] = [], lenient: Bool = false) {
+        self.lenient = lenient
         self.model = model
         self.customs = Array(customs.prefix(Recognizer.maxCustoms))
         let customs = self.customs
@@ -417,9 +423,19 @@ public final class Recognizer {
             let tuning = h >= 0 ? held[h].tuning : swipeTuning
             let inPose = (h >= 0 && (h == holdIndex || h == engagedIndex))
             let threshold = inPose ? tuning.stay : tuning.enter
-            if aScores[b.top] >= threshold && b.confidence >= tuning.confidence && b.margin >= tuning.margin {
+            let needConfidence = lenient ? min(tuning.confidence, 0.45) : tuning.confidence
+            let needMargin = lenient ? min(tuning.margin, 0.08) : tuning.margin
+            if aScores[b.top] >= threshold && b.confidence >= needConfidence && b.margin >= needMargin {
                 agreed = b.top
             }
+        }
+        // Not the knob: a plain fist passes Judge A's pinch rule, so the knob always needs both judges.
+        if lenient && agreed == 0 && aBest > 0 && aBest != Pose.pinch.rawValue && poseToHeld[aBest] >= 0
+            && (b.top == 0 || b.top == aBest) {
+            // Judge A alone, only when it is all but certain and B doesn't name another pose.
+            let h = poseToHeld[aBest]
+            let inPose = h == holdIndex || h == engagedIndex
+            if aBestScore >= (inPose ? held[h].tuning.stay : 0.95) { agreed = aBest }
         }
         status.agreed = agreed
 
@@ -608,8 +624,9 @@ public final class Recognizer {
     // MARK: - Swipes and waves
 
     private func trackStrokes(_ t: Double, vx: Float, vy: Float, x: Float, y: Float, b: Classification, partial: Bool) {
-        let openish = !partial && max(aScores[Pose.flat.rawValue], aScores[Pose.open.rawValue]) >= swipeTuning.enter
-            && (b.top == Pose.flat.rawValue || b.top == Pose.open.rawValue) && b.confidence >= swipeTuning.confidence
+        let aOpen = max(aScores[Pose.flat.rawValue], aScores[Pose.open.rawValue])
+        let bOpen = (b.top == Pose.flat.rawValue || b.top == Pose.open.rawValue) && b.confidence >= swipeTuning.confidence
+        let openish = !partial && aOpen >= swipeTuning.enter && (bOpen || (lenient && b.top == 0 && aOpen >= 0.9))
         // Sideways movement only: raising or dropping the hand isn't a stroke.
         let fast = abs(vx) >= m.strokeStartSpeed && abs(vx) >= 1.5 * abs(vy)
         let sign: Float = vx >= 0 ? 1 : -1

@@ -353,7 +353,12 @@ final class Engine: ObservableObject {
         var holds: [Int: Double] = [:]
         for g in Gesture.allCases { holds[g.index] = m.tuning(for: g).hold }
         for (i, c) in customs.enumerated() { holds[Recognizer.customBase + i] = c.gesture.tuning.hold }
-        pipeline.use(model: m, customs: customs.map(\.gesture), disabled: settings.disabled)
+        if settings.trial {
+            // Trial: accept hands Vision is less sure about (curled fingertips are often half-hidden).
+            m.quality.structural = min(m.quality.structural, 0.2)
+            m.quality.tips = min(m.quality.tips, 0.03)
+        }
+        pipeline.use(model: m, customs: customs.map(\.gesture), disabled: settings.disabled, lenient: settings.trial)
         let router = self.router, settings = self.settings, customs = self.customs, proven = self.proven
         pipeline.visionQueue.async {
             router.settings = settings
