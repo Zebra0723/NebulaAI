@@ -7,6 +7,13 @@ import SwiftUI
 enum NebulaMain {
     @MainActor static func main() {
         let app = NSApplication.shared
+        if CommandLine.arguments.contains("--test-targeting") {
+            // End-to-end targeting tests with real windows (see TargetingSelfTest).
+            app.setActivationPolicy(.accessory)
+            TargetingSelfTest.run()
+            app.run()
+            return
+        }
         let delegate = AppDelegate()
         app.delegate = delegate
         app.setActivationPolicy(.accessory) // menu bar only until the window opens

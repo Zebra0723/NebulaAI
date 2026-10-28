@@ -174,6 +174,8 @@ public struct CustomVerification: Sendable {
     public var heldOut: Int
     public var recognized: Int
     public var falseFires: Int
+    /// The built-in gestures measured again on the retrained model.
+    public var report: Report?
     public var recall: Double { heldOut == 0 ? 0 : Double(recognized) / Double(heldOut) }
     /// Saves only at 99% or better on examples Judge B didn't learn from, with no false fire.
     public var passes: Bool { heldOut >= 3 && recall >= 0.99 && falseFires == 0 }
@@ -204,16 +206,19 @@ extension CustomGestureCheck {
         let (train, _, heldOut) = Trainer.split(library)
         var model = base
         model.classifier = Trainer.trainClassifier(train + learn, base: base, customs: all)
-        var verification = CustomVerification(model: model, heldOut: 0, recognized: 0, falseFires: 0)
+        var verification = CustomVerification(model: model, heldOut: 0, recognized: 0, falseFires: 0, report: nil)
         let id = Recognizer.customBase + all.count - 1
         for rec in test {
             let e = Evaluator.evaluate([rec], model: model, customs: all)
             verification.heldOut += e.scores[custom.id]?.examples ?? 0
             verification.recognized += e.scores[custom.id]?.recognized ?? 0
         }
-        let negatives = heldOut.filter { $0.info.kind != .gestures }
-        let e = Evaluator.evaluate(negatives, model: model, customs: all)
+        // Every held-out session: the custom gesture must never fire there, and the built-in
+        // gestures are measured again, since Judge B relearned everything.
+        let e = Evaluator.evaluate(heldOut, model: model, customs: all)
         verification.falseFires = e.falseFires.filter { $0.gesture == custom.id }.count
+            + e.scores.filter { $0.key == custom.id }.reduce(0) { $0 + $1.value.wrongFires }
+        verification.report = Report.make(evaluation: e, model: model, synthetic: heldOut.contains { $0.info.synthetic }, pipeline: nil)
         _ = id
         return verification
     }

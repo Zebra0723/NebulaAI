@@ -34,12 +34,14 @@ struct GateFile: Codable {
     var passing: [String]
     var generatedAt: Double
     var summary: String
+    /// The model the gate measured; it only vouches for that exact model.
+    var modelFingerprint: String = ""
 
     static func bundled() -> GateFile {
         guard let url = Bundle.main.url(forResource: "gate", withExtension: "json"),
               let data = try? Data(contentsOf: url),
               let gate = try? JSONDecoder().decode(GateFile.self, from: data) else {
-            return GateFile(mode: "recorder", passing: [], generatedAt: 0, summary: "No accuracy report was built into this copy of Nebula.")
+            return GateFile(mode: "recorder", passing: [], generatedAt: 0, summary: "No accuracy report was built into this copy of Nebula.", modelFingerprint: "")
         }
         return gate
     }

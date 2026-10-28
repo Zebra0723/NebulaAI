@@ -115,11 +115,12 @@ case "report", "gate":
     if let json = option("json") { writeJSON(report, to: json) }
     if let gateFile = option("gate-file") {
         // What the app may let act: only gestures that met every target.
-        struct GateFile: Encodable { let mode: String; let passing: [String]; let generatedAt: Double; let summary: String }
+        struct GateFile: Encodable { let mode: String; let passing: [String]; let generatedAt: Double; let summary: String; let modelFingerprint: String }
         let failing = Gesture.allCases.map(\.rawValue).filter { !report.passing.contains($0) }
         writeJSON(GateFile(mode: "proven", passing: report.synthetic ? [] : report.passing, generatedAt: report.generatedAt,
                            summary: report.pass ? "Every target met on held-out sessions." :
-                               "Below target, so switched off: \(failing.joined(separator: ", "))."), to: gateFile)
+                               "Below target, so switched off: \(failing.joined(separator: ", ")).",
+                           modelFingerprint: report.modelFingerprint), to: gateFile)
     }
     if command == "gate" {
         if report.synthetic && !flag("allow-synthetic") {

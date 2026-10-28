@@ -118,7 +118,7 @@ final class CreateModel: ObservableObject {
         var tuning = GestureTuning()
         tuning.hold = d.spec.hold
         let gesture = CustomGesture(id: id, name: d.spec.name, rule: d.spec.rule, label: Pose.builtinCount + engine.customs.count, tuning: tuning)
-        engine.saveCustom(SavedCustomGesture(spec: d.spec, gesture: gesture, recall: v.recall, heldOut: v.heldOut), model: v.model)
+        engine.saveCustom(SavedCustomGesture(spec: d.spec, gesture: gesture, recall: v.recall, heldOut: v.heldOut), model: v.model, report: v.report)
         stage = .saved
         turns.append(Turn(fromUser: false, text: "Saved. \(d.spec.name) is live, and runs on the Mac with no tokens."))
     }

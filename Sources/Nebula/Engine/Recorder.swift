@@ -69,8 +69,8 @@ final class Recorder: ObservableObject {
         "Eat a snack", "Lean back and rest your hands",
     ]
 
-    /// Seconds on the camera's clock (the same one frames are stamped with).
-    private static func clock() -> Double { CMClockGetTime(CMClockGetHostTimeClock()).seconds }
+    /// Seconds on the clock frames are stamped with (the Mac's host clock).
+    private static func clock() -> Double { Monotonic.seconds() }
 
     func start(_ plan: Plan, _ c: Conditions) {
         guard !running, let engine else { return }

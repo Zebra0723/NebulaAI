@@ -42,7 +42,8 @@ final class Engine: ObservableObject {
     @Published var flash = false
 
     let gate = GateFile.bundled()
-    private(set) var model = ModelStore.load()
+    private(set) var model = ModelStore.load() { didSet { modelFingerprint = model.fingerprint } }
+    private var modelFingerprint = ""
     let hud = HUD()
     let pipeline: Pipeline
     let router: ActionRouter
@@ -64,6 +65,7 @@ final class Engine: ObservableObject {
         router = ActionRouter(hud: hud)
         recorder = Recorder()
         recorder.engine = self
+        modelFingerprint = model.fingerprint
         report = Self.loadReport()
         wire()
     }
@@ -96,11 +98,8 @@ final class Engine: ObservableObject {
     func start() {
         TargetTracker.shared.onActivate = { target in Adapters.shared.prewarm(target) }
         TargetTracker.shared.start()
-        do {
-            try pipeline.configure(highResolution: settings.highResolution)
-        } catch {
-            cameraProblem = "No camera available."
-        }
+        // Configure the camera now, so turning on only has to start it (if access is granted yet).
+        if AVCaptureDevice.authorizationStatus(for: .video) == .authorized { ensureCamera() }
         observeSystem()
         timers.append(Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.tick() }
@@ -118,12 +117,41 @@ final class Engine: ObservableObject {
         if isArmed { disarm("Turned off") } else { arm() }
     }
 
-    func arm() {
-        guard AVCaptureDevice.authorizationStatus(for: .video) != .denied else {
-            cameraProblem = "Camera access is off. Turn it on for Nebula in System Settings → Privacy & Security → Camera."
-            return
+    @discardableResult
+    private func ensureCamera() -> Bool {
+        if pipeline.configured { return true }
+        do {
+            try pipeline.configure(highResolution: settings.highResolution)
+            cameraProblem = nil
+            return true
+        } catch {
+            cameraProblem = "No camera available."
+            return false
         }
-        AVCaptureDevice.requestAccess(for: .video) { _ in }
+    }
+
+    /// Asks for camera access when it hasn't been decided, then runs `then` if granted.
+    private func withCamera(_ then: @escaping () -> Void) {
+        switch AVCaptureDevice.authorizationStatus(for: .video) {
+        case .authorized:
+            if ensureCamera() { then() }
+        case .notDetermined:
+            AVCaptureDevice.requestAccess(for: .video) { granted in
+                DispatchQueue.main.async { if granted { self.withCamera(then) } }
+            }
+        default:
+            cameraProblem = "Camera access is off. Turn it on for Nebula in System Settings → Privacy & Security → Camera."
+            hud.show("Camera access is off", symbol: "video.slash", warn: true)
+        }
+    }
+
+    func arm() {
+        withCamera { self.armNow() }
+    }
+
+    private func armNow() {
+        guard !isArmed else { return }
+        if arming == .practice { turnOff() }
         arming = .armed(since: Date())
         setActions(true)
         pipeline.start()
@@ -131,7 +159,7 @@ final class Engine: ObservableObject {
     }
 
     func armForApproval() {
-        guard settings.approvalMode, arming == .off else { return }
+        guard settings.approvalMode, arming == .off, AVCaptureDevice.authorizationStatus(for: .video) == .authorized, ensureCamera() else { return }
         arming = .approval(until: Date().addingTimeInterval(60))
         setActions(true)
         pipeline.start()
@@ -139,8 +167,11 @@ final class Engine: ObservableObject {
     }
 
     func startPractice() {
+        withCamera { self.startPracticeNow() }
+    }
+
+    private func startPracticeNow() {
         guard arming == .off else { return }
-        AVCaptureDevice.requestAccess(for: .video) { _ in }
         arming = .practice
         setActions(false)
         pipeline.start()
@@ -263,10 +294,15 @@ final class Engine: ObservableObject {
     /// before any report), minus what you've switched off.
     var proven: Set<String> {
         var set: Set<String>
-        if let report, report.modelFingerprint == model.fingerprint, !report.synthetic {
+        // Proof is for one exact model: change the model (calibration, a custom gesture) and the
+        // report has to be run again before anything acts.
+        let fingerprint = modelFingerprint
+        if let report, report.modelFingerprint == fingerprint, !report.synthetic {
             set = Set(report.passing)
+        } else if gate.mode != "recorder" && gate.modelFingerprint == fingerprint {
+            set = Set(gate.passing)
         } else {
-            set = gate.mode == "recorder" ? [] : Set(gate.passing)
+            set = []
         }
         for c in customs where c.recall >= 0.99 { set.insert(c.id) }
         return set
@@ -280,7 +316,7 @@ final class Engine: ObservableObject {
 
     private func settingsChanged(_ old: NebulaSettings) {
         settings.save()
-        if old.highResolution != settings.highResolution {
+        if old.highResolution != settings.highResolution && pipeline.configured {
             let wasOn = isCameraOn
             pipeline.stop()
             try? pipeline.configure(highResolution: settings.highResolution)
@@ -323,12 +359,17 @@ final class Engine: ObservableObject {
         busy = "Training on your recordings…"
         let base = model
         let customGestures = customs.map(\.gesture)
+        let latencyLog = router.latency
         Task.detached(priority: .userInitiated) {
             let all = (try? Recording.loadAll(in: Paths.recordings)) ?? []
             let usable = all.filter { $0.info.kind != .enrollment }
             let (train, validation, test) = Trainer.split(usable)
             guard !train.isEmpty, !test.isEmpty else {
-                await MainActor.run { self.busy = nil; self.note("Not enough recordings yet: record at least four sessions.") }
+                await MainActor.run {
+                    self.busy = nil
+                    self.note("Not enough recordings to report on yet: record at least four sessions of each kind.")
+                    if all.contains(where: { $0.info.kind == .enrollment }) { self.personalize() }
+                }
                 return
             }
             var trained = Trainer.train(train, validation: validation, base: base, source: "recorded")
@@ -336,14 +377,15 @@ final class Engine: ObservableObject {
             if !enrollment.isEmpty || !customGestures.isEmpty {
                 trained = Trainer.personalize(trained, enrollment: enrollment, library: usable, customs: customGestures)
             }
-            let evaluation = Evaluator.evaluate(test, model: trained)
-            let pipelineLatency = self.router.latency.percentiles()
-            let report = Report.make(evaluation: evaluation, model: trained, synthetic: test.contains { $0.info.synthetic },
+            let final = trained
+            let evaluation = Evaluator.evaluate(test, model: final)
+            let pipelineLatency = latencyLog.percentiles()
+            let report = Report.make(evaluation: evaluation, model: final, synthetic: test.contains { $0.info.synthetic },
                                      pipeline: pipelineLatency.count > 0 ? pipelineLatency : nil)
-            try? ModelStore.save(trained)
+            try? ModelStore.save(final)
             if let data = try? JSONEncoder().encode(report) { try? data.write(to: Paths.report, options: .atomic) }
             await MainActor.run {
-                self.model = trained
+                self.model = final
                 self.report = report
                 self.busy = nil
                 self.applyRecognizer()
@@ -366,11 +408,12 @@ final class Engine: ObservableObject {
             let personal = Trainer.personalize(base, enrollment: enrollment, library: library, customs: customGestures,
                                                log: { lines.append($0) })
             try? ModelStore.save(personal)
+            let notes = lines
             await MainActor.run {
                 self.model = personal
                 self.busy = nil
                 self.applyRecognizer()
-                lines.forEach { self.note($0) }
+                notes.forEach { self.note($0) }
                 self.note("Calibrated. Run the report to see which gestures meet their targets.")
             }
         }
@@ -378,12 +421,18 @@ final class Engine: ObservableObject {
 
     // MARK: - Custom gestures
 
-    func saveCustom(_ saved: SavedCustomGesture, model newModel: NebulaModel) {
+    /// Saves a verified custom gesture with the model it was verified on, and that model's report
+    /// (Judge B relearned every pose, so the built-in gestures were measured again too).
+    func saveCustom(_ saved: SavedCustomGesture, model newModel: NebulaModel, report newReport: Report?) {
         customs.removeAll { $0.id == saved.id }
         customs.append(saved)
         CustomStore.save(customs)
         model = newModel
         try? ModelStore.save(newModel)
+        if let newReport {
+            report = newReport
+            if let data = try? JSONEncoder().encode(newReport) { try? data.write(to: Paths.report, options: .atomic) }
+        }
         applyRecognizer()
     }
 
@@ -393,7 +442,7 @@ final class Engine: ObservableObject {
         for i in customs.indices { customs[i].gesture.label = Pose.builtinCount + i }
         CustomStore.save(customs)
         applyRecognizer()
-        personalize()
+        trainAndReport()
     }
 
     /// Recordings of custom gestures (kept with the enrollment sessions).

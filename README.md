@@ -66,6 +66,16 @@ export NEBULA_SIGN_IDENTITY="Apple Development: you@example.com (TEAMID)"
 | Volume knob | Pinch as if holding a small knob, twist | Mac volume |
 | Wave | Open hand waved side to side 2–3 times | Turn Nebula off |
 
+## Targeting tests with real windows
+
+The targeting rules are unit-tested in `swift test`. The end-to-end tests open real windows (two Safari windows plus TextEdit, two Preview documents, two TextEdit windows with the pointer over the back one, Keynote if it's installed, a second display if one is connected), fire gestures through the real action router, and check that only the frontmost window changed. They run inside the installed app, so they use Nebula's own permissions:
+
+```bash
+scripts/test-targeting.sh
+```
+
+They open and close windows in those apps, so run them when you aren't using them.
+
 ## How it works
 
 ```

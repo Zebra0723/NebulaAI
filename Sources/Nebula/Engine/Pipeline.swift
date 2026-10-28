@@ -123,6 +123,7 @@ final class Pipeline: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
             let dims = CMVideoFormatDescriptionGetDimensions(best.format.formatDescription)
             resolution = "\(dims.width)×\(dims.height) at \(Int(rate.rounded())) fps"
         }
+        configured = true
 
         if !session.outputs.contains(output) {
             output.alwaysDiscardsLateVideoFrames = true
@@ -131,7 +132,14 @@ final class Pipeline: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
             guard session.canAddOutput(output) else { throw CameraError.noCamera }
             session.addOutput(output)
         }
+        // Unmirrored, always: the recognizer does its own mirroring, so it must know which way the image is.
+        if let connection = output.connection(with: .video), connection.isVideoMirroringSupported {
+            connection.automaticallyAdjustsVideoMirroring = false
+            connection.isVideoMirrored = false
+        }
     }
+
+    private(set) var configured = false
 
     func start() {
         sessionQueue.async { if !self.session.isRunning { self.session.startRunning() } }
@@ -157,16 +165,21 @@ final class Pipeline: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
 
     func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
         let arrival = Monotonic.nanoseconds()
-        let pts = CMSampleBufferGetPresentationTimeStamp(sampleBuffer).seconds
-        let now = CMClockGetTime(CMClockGetHostTimeClock()).seconds
-        captureAge.record(Float((now - pts) * 1000))
+        let arrivalSeconds = Double(arrival) / 1e9
+        // The capture timestamp is on the host clock (the same clock as Monotonic) on Macs; if a
+        // camera ever stamps on another clock, fall back to the arrival time.
+        let captured = CMSampleBufferGetPresentationTimeStamp(sampleBuffer).seconds
+        let age = arrivalSeconds - captured
+        let clocksAgree = age >= 0 && age < 1
+        let pts = clocksAgree ? captured : arrivalSeconds
+        if clocksAgree { captureAge.record(Float(age * 1000)) }
         if lastArrival > 0 {
             let dt = Double(arrival &- lastArrival) / 1e9
             intervalEMA += 0.05 * (dt - intervalEMA)
         }
         lastArrival = arrival
         // Never act on a stale frame: if this one waited more than two frame intervals, skip it.
-        if now - pts > 2.5 / max(targetFPS, 1) {
+        if clocksAgree && age > 2.5 / max(targetFPS, 1) {
             droppedStale += 1
             return
         }
