@@ -76,7 +76,14 @@ final class Adapters {
                 case "paused": done(ActionOutcome(text: "Paused · \(label)", verified: true))
                 case "none": done(ActionOutcome(text: "Nothing playing in this tab", verified: false))
                 default:
-                    done(ActionOutcome(text: self.browserFailure(name), verified: false))
+                    // Without JavaScript, YouTube still has its own play/pause key: K, sent to this browser only.
+                    if Self.isYouTube(target.windowTitle) {
+                        KeyEvents.press(KeyCombo(keyCode: 40, key: "k"), toPID: target.pid)
+                        ActionLog.write("play/pause: script refused (\(self.lastError?.number ?? 0)), pressed K for YouTube")
+                        done(ActionOutcome(text: "Play/pause · YouTube", verified: nil))
+                    } else {
+                        done(ActionOutcome(text: self.browserFailure(name), verified: false))
+                    }
                 }
             }
         case (.keynote, .next), (.keynote, .previous):
@@ -259,6 +266,10 @@ final class Adapters {
         var value: CFTypeRef?
         guard AXUIElementCopyAttributeValue(e, kAXChildrenAttribute as CFString, &value) == .success else { return [] }
         return (value as? [AXUIElement]) ?? []
+    }
+
+    static func isYouTube(_ title: String) -> Bool {
+        title.hasSuffix("YouTube") || title.contains("- YouTube")
     }
 
     static func short(_ title: String) -> String {
