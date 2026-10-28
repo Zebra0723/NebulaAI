@@ -188,6 +188,28 @@ case "diagnose":
         if !worst.isEmpty { print("   outside range: " + worst.map { "\($0.key) (\($0.value))" }.joined(separator: ", ")) }
         if let rj = rejections[name] { print("   unusable frames: " + rj.map { "\($0.key) \($0.value)" }.joined(separator: ", ")) }
     }
+    // Sideways strokes: what each one in a swipe or wave window counted as, or why not.
+    var strokes: [String: [StrokeOutcome: Int]] = [:]
+    for rec in recs {
+        let r = Recognizer(model: model, lenient: true)
+        let windows = rec.labels.filter { $0.expected?.kind == .movement }
+        var seen = 0
+        for frame in rec.frames {
+            r.process(frame)
+            guard r.strokesJudged != seen else { continue }
+            seen = r.strokesJudged
+            if let w = windows.first(where: { frame.time >= $0.start && frame.time <= $0.end + 0.3 }) {
+                strokes[w.gesture, default: [:]][r.lastStroke, default: 0] += 1
+            }
+        }
+    }
+    if !strokes.isEmpty {
+        print("\nSideways strokes in swipe and wave windows:")
+        for (name, counts) in strokes.sorted(by: { $0.key < $1.key }) {
+            print("   \(name): " + counts.sorted { $0.value > $1.value }.map { "\($0.key) \($0.value)" }.joined(separator: ", "))
+        }
+    }
+
     // What counts: replayed through the whole recognizer as the app runs it (trial mode),
     // did each gesture you made actually fire, and did anything fire that shouldn't have?
     let result = Evaluator.evaluate(recs, model: model, lenient: true)

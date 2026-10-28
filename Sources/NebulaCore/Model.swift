@@ -66,7 +66,7 @@ public struct MotionTuning: Codable, Sendable, Equatable {
     /// How far ahead scroll extrapolates the hand, seconds: about one frame plus display latency.
     public var predictionHorizon: Float = 0.03
     /// Degrees of wrist twist per volume step.
-    public var knobStepDegrees: Float = 12
+    public var knobStepDegrees: Float = 9
 
     public init() {}
 }
@@ -101,6 +101,8 @@ public struct NebulaModel: Codable, Sendable, Equatable {
         let current = FeatureExtractor.Quality()
         quality.structural = min(quality.structural, current.structural)
         quality.tips = min(quality.tips, current.tips)
+        // Likewise the knob: real twists turned out smaller than the first step size.
+        motion.knobStepDegrees = min(motion.knobStepDegrees, MotionTuning().knobStepDegrees)
     }
 
     public func tuning(for gesture: Gesture) -> GestureTuning {

@@ -87,7 +87,9 @@ public enum FeatureExtractor {
     public static func check(_ hand: Hand, aspect: Float, quality q: Quality) -> Rejection {
         // Unrolled on purpose: no arrays on the per-frame path.
         let c = hand.confidence
-        if c[0] < q.structural || c[1] < q.structural || c[2] < q.structural || c[5] < q.structural
+        // The thumb's base hides behind the fingers when one is at the lips: it needs less.
+        let thumbBase = q.structural * 0.5
+        if c[0] < q.structural || c[1] < thumbBase || c[2] < thumbBase || c[5] < q.structural
             || c[9] < q.structural || c[13] < q.structural || c[17] < q.structural { return .lowConfidence }
         for j in 0..<21 where c[j] < q.tips { return .lowConfidence }
         let m = q.edgeMargin

@@ -120,6 +120,9 @@ public final class Recognizer {
     private let eventBuffer: UnsafeMutablePointer<RecognizerEvent>
     public private(set) var eventCount = 0
     public private(set) var status = RecognizerStatus()
+    /// How the last sideways stroke was judged, and how many have been: for diagnosis.
+    public private(set) var lastStroke: StrokeOutcome = .swipe
+    public private(set) var strokesJudged = 0
     public private(set) var features = FeatureVector()
 
     // Tracking
@@ -148,6 +151,8 @@ public final class Recognizer {
     private var strokeStartT: Double = 0, strokeStartX: Float = 0, strokeStartY: Float = 0
     private var strokeLastT: Double = 0, strokeLastX: Float = 0, strokeLastY: Float = 0
     private var strokePeak: Float = 0, strokeFrames = 0, strokePoseFrames = 0, strokeSizeSum: Float = 0
+    /// Stroke frames with a whole hand, the only ones the judges can see the pose in.
+    private var strokeSeenFrames = 0
     private var anchorT: Double = 0, anchorX: Float = 0, anchorY: Float = 0
     private var lastStrokeEnd: Double = -10, lastStrokeDir: Float = 0
     private var waveCount = 0, waveLastDir: Float = 0, waveLastEnd: Double = -10
@@ -395,7 +400,12 @@ public final class Recognizer {
             handLost(t, rejection: o.rejection)
             return
         }
-        if o.jumped { endStroke(t, evaluate: false) }
+        if o.jumped {
+            // A fast swipe blurs: Vision misses frames and the hand reappears further along. Still
+            // going sideways the same way, it's the same stroke; anything else is another hand or a glitch.
+            let dx = o.smoothX - strokeLastX, dy = o.smoothY - strokeLastY
+            if !(inStroke && dx * strokeDir > 0 && abs(dx) >= abs(dy)) { endStroke(t, evaluate: false) }
+        }
         if o.partial {
             // Half a hand: follow the movement (a wide swipe can graze the edge), judge nothing.
             trackStrokes(t, vx: features[Feature.velocityX.rawValue], vy: features[Feature.velocityY.rawValue],
@@ -557,7 +567,7 @@ public final class Recognizer {
         // A stroke that leaves the frame completes on its last good frame.
         // A fast hand can vanish from Vision for a frame or two mid-swipe; only a longer gap
         // ends the stroke (on its last good frame).
-        if inStroke && !keepStroke && missingFrames >= m.lostFrames { endStroke(t, evaluate: true) }
+        if inStroke && !keepStroke && missingFrames >= m.lostFrames * 2 { endStroke(t, evaluate: true) }
         for h in 0..<heldCount where needsRelease[h] {
             releaseCount[h] += 1
             if releaseCount[h] >= m.releaseFrames { needsRelease[h] = false }
@@ -661,6 +671,7 @@ public final class Recognizer {
                 strokeStartY = anchorY
                 strokePeak = abs(vx)
                 strokeFrames = 1
+                strokeSeenFrames = partial ? 0 : 1
                 strokePoseFrames = openish ? 1 : 0
                 strokeSizeSum = smoothedSize
                 strokeLastT = t
@@ -676,6 +687,7 @@ public final class Recognizer {
         if sign == strokeDir && abs(vx) >= m.strokeEndSpeed && abs(vx) >= abs(vy) {
             strokePeak = max(strokePeak, abs(vx))
             strokeFrames += 1
+            if !partial { strokeSeenFrames += 1 }
             if openish { strokePoseFrames += 1 }
             strokeSizeSum += smoothedSize
             strokeLastT = t
@@ -683,7 +695,17 @@ public final class Recognizer {
             strokeLastY = y
             return
         }
-        // The movement just completed on this frame.
+        // The movement just completed on this frame. After a gap (the hand lost to blur), the
+        // distance covered unseen shows how fast it went.
+        if (x - strokeLastX) * strokeDir > 0 && t - strokeLastT > 0.05 {
+            let bridged = abs(x - strokeLastX) / max(smoothedSize, 1e-3) / Float(t - strokeLastT)
+            strokePeak = max(strokePeak, bridged)
+            // The reappearing hand is part of the stroke.
+            strokeFrames += 1
+            strokeSizeSum += smoothedSize
+            if !partial { strokeSeenFrames += 1 }
+            if openish { strokePoseFrames += 1 }
+        }
         strokeLastT = t
         strokeLastX = x
         strokeLastY = y
@@ -700,6 +722,7 @@ public final class Recognizer {
             strokeStartY = y
             strokePeak = abs(vx)
             strokeFrames = 1
+            strokeSeenFrames = partial ? 0 : 1
             strokePoseFrames = openish ? 1 : 0
             strokeSizeSum = smoothedSize
         }
@@ -714,7 +737,9 @@ public final class Recognizer {
         let dy = (strokeLastY - strokeStartY) / max(size, 1e-3)
         let distance = abs(dx)
         let duration = strokeLastT - strokeStartT
-        let poseShare = Float(strokePoseFrames) / Float(strokeFrames)
+        // Share of the frames where the pose could be seen: half-hands at the edge don't count against it.
+        let poseShare = strokeSeenFrames > 0 ? Float(strokePoseFrames) / Float(strokeSeenFrames) : 0
+        let needShare = lenient ? min(m.strokePoseShare, 0.45) : m.strokePoseShare
         let dir = strokeDir
         let reversedRecently = strokeStartT - lastStrokeEnd < m.swipeReversalGuard && lastStrokeDir == -dir
         let level = abs(dy) <= 0.6 * distance
@@ -728,8 +753,9 @@ public final class Recognizer {
 
         // Swipe: wide, fast, level, open and flat, and not the middle of a wave.
         if distance >= m.swipeMinDistance && strokePeak >= m.swipeMinPeakSpeed && duration <= m.swipeMaxDuration
-            && abs(dy) <= m.swipeMaxDrift * distance && poseShare >= m.strokePoseShare && !reversedRecently
+            && abs(dy) <= m.swipeMaxDrift * distance && poseShare >= needShare && !reversedRecently
             && t >= swipeCooldownUntil {
+            judged(.swipe)
             let g: Gesture = dir > 0 ? .swipeRight : .swipeLeft
             if enabledFlags[g.index] {
                 swipeCooldownUntil = t + swipeTuning.cooldown
@@ -739,9 +765,10 @@ public final class Recognizer {
             return
         }
 
-        // Wave stroke: smaller, alternating.
+        // Wave stroke: smaller, alternating. A wave swings from the wrist, so its path arcs more.
         if distance >= m.waveMinDistance && distance <= m.waveMaxDistance && duration <= m.waveMaxStroke
-            && poseShare >= m.strokePoseShare && level {
+            && poseShare >= needShare && abs(dy) <= distance {
+            judged(.waveStroke)
             if waveCount > 0 && dir == -waveLastDir && strokeStartT - waveLastEnd <= m.waveMaxGap {
                 waveCount += 1
             } else {
@@ -758,6 +785,25 @@ public final class Recognizer {
             }
         } else {
             waveCount = 0
+            // Why it was neither, most basic reason first.
+            if poseShare < needShare { judged(.notOpen) }
+            else if distance < m.waveMinDistance { judged(.tooShort) }
+            else if duration > m.swipeMaxDuration { judged(.tooLong) }
+            else if abs(dy) > m.swipeMaxDrift * distance { judged(.notLevel) }
+            else if distance < m.swipeMinDistance { judged(.tooShort) }
+            else if strokePeak < m.swipeMinPeakSpeed { judged(.tooSlow) }
+            else if reversedRecently { judged(.afterReversal) }
+            else { judged(.coolingDown) }
         }
     }
+
+    @inline(__always) private func judged(_ outcome: StrokeOutcome) {
+        lastStroke = outcome
+        strokesJudged &+= 1
+    }
+}
+
+/// What a sideways stroke counted as, or why it counted as nothing.
+public enum StrokeOutcome: UInt8, Sendable, CaseIterable {
+    case swipe, waveStroke, notOpen, tooShort, tooLong, notLevel, tooSlow, afterReversal, coolingDown
 }

@@ -124,6 +124,27 @@ final class RecognizerTests: XCTestCase {
         XCTAssertLessThan(fires[0].0, 0.05 + 0.3 + 0.05, "within a few frames of the hand stopping")
     }
 
+    func testASwipeStillFiresWhenBlurHidesTheHandMidStroke() {
+        // At 30 fps a fast swipe blurs and Vision loses the hand for several frames; it reappears
+        // much further along. That is still one swipe.
+        for direction: Float in [1, -1] {
+            let r = Recognizer(model: TestKit.model, lenient: true)
+            let size: Float = 0.14, distance: Float = 3.5, duration = 0.3
+            let x0 = 0.67 - direction * distance * size / 2
+            var events = TestKit.run(r, from: 0, seconds: 0.1, fps: 30) { _ in [TestKit.hand(.flat, at: (x0, 0.5), size: size)] }
+            events += TestKit.run(r, from: 0.1, seconds: duration, fps: 30) { t in
+                let u = Float(t / duration)
+                if u > 0.3 && u < 0.75 { return [] } // lost to blur: about 4 frames
+                let e = u * u * u * (10 - 15 * u + 6 * u * u)
+                return [TestKit.hand(.flat, at: (x0 + direction * distance * size * e, 0.5), size: size)]
+            }
+            events += TestKit.run(r, from: 0.1 + duration, seconds: 0.4, fps: 30) { _ in
+                [TestKit.hand(.flat, at: (x0 + direction * distance * size, 0.5), size: size)]
+            }
+            XCTAssertEqual(TestKit.fires(events).map(\.1), [direction > 0 ? Gesture.swipeRight.index : Gesture.swipeLeft.index], "\(direction) \(r.lastStroke) \(r.strokesJudged)")
+        }
+    }
+
     func testSwipeDirectionIsYourDirection() {
         let r = Recognizer(model: TestKit.model)
         XCTAssertEqual(TestKit.fires(swipe(r, from: 0, direction: -1)).map(\.1), [Gesture.swipeLeft.index])
@@ -177,7 +198,7 @@ final class RecognizerTests: XCTestCase {
             _ = TestKit.run(r, from: 0, seconds: 0.3) { _ in [TestKit.hand(.pinch, roll: 0)] }
             let events = TestKit.run(r, from: 0.3, seconds: 0.6) { t in [TestKit.hand(.pinch, roll: turn * Float(min(t / 0.5, 1)))] }
             let steps = events.compactMap { if case .volume(let s) = $0.1 { return s } else { return nil } }
-            XCTAssertEqual(steps.count, 3, "40° is three 12° steps")
+            XCTAssertEqual(steps.count, 4, "40° is four 9° steps")
             XCTAssertTrue(steps.allSatisfy { $0 == sign })
         }
     }
