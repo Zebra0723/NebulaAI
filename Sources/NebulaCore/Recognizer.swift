@@ -275,7 +275,10 @@ public final class Recognizer {
     }
 
     /// The seeing stage: picks the hand, extracts features, smooths motion and asks both judges.
-    public func observe(_ frame: Frame) -> Observation {
+    public func observe(_ input: Frame) -> Observation {
+        var frame = input
+        frame.hand0.fillMissingJoints()
+        frame.hand1.fillMissingJoints()
         var o = Observation()
         let t = frame.time
         lastTime = t
@@ -535,7 +538,9 @@ public final class Recognizer {
         status.judgeAScore = 0
         status.judgeB = Classification()
         // A stroke that leaves the frame completes on its last good frame.
-        if inStroke && !keepStroke { endStroke(t, evaluate: true) }
+        // A fast hand can vanish from Vision for a frame or two mid-swipe; only a longer gap
+        // ends the stroke (on its last good frame).
+        if inStroke && !keepStroke && missingFrames >= m.lostFrames { endStroke(t, evaluate: true) }
         for h in 0..<heldCount where needsRelease[h] {
             releaseCount[h] += 1
             if releaseCount[h] >= m.releaseFrames { needsRelease[h] = false }

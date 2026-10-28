@@ -53,6 +53,9 @@ public struct PoseRule: Codable, Sendable, Equatable {
 /// The built-in poses. Ranges come from the plan's descriptions; the bands are
 /// where personal calibration is allowed to move them.
 public enum BuiltinRules {
+    /// Bumped whenever these rules change, so personal calibration built on older ones is redone.
+    public static let version = 2
+
     // Reach: about 1 for an extended finger, 0 or below for a curled one.
     static let extended: Float = 0.75
     static let curled: Float = 0.35
@@ -70,58 +73,63 @@ public enum BuiltinRules {
         Condition(.palmAxisY, min: 0.45, band: 0.2),
     ])
 
+    /// An open hand in motion (swipes, waves): fingers out but not necessarily straight, and the
+    /// palm free to turn a little. Recordings showed moving fingers reaching 0.6–0.75.
     public static let open = PoseRule(name: "open", conditions: [
-        up(.reachIndex), up(.reachMiddle), up(.reachRing), Condition(.reachLittle, min: 0.6, band: 0.15),
-        Condition(.palmFacing, min: 0.1, band: 0.15),
-        Condition(.palmAxisY, min: 0.3, band: 0.2),
+        Condition(.reachIndex, min: 0.58, band: 0.15), Condition(.reachMiddle, min: 0.58, band: 0.15),
+        Condition(.reachRing, min: 0.55, band: 0.15), Condition(.reachLittle, min: 0.45, band: 0.15),
+        Condition(.palmFacing, min: -0.15, band: 0.2),
+        Condition(.palmAxisY, min: 0.2, band: 0.2),
     ])
 
     public static let thumbsUp = PoseRule(name: "thumbsUp", conditions: [
         Condition(.straightThumb, min: 0.8, band: 0.1),
-        Condition(.extThumb, min: 0.55, band: 0.15),
-        Condition(.thumbDirY, min: 0.72, band: 0.15),
+        Condition(.extThumb, min: 0.42, band: 0.15),
+        Condition(.thumbDirY, min: 0.65, band: 0.15),
         down(.reachIndex), down(.reachMiddle), down(.reachRing), down(.reachLittle),
     ])
 
     public static let thumbsDown = PoseRule(name: "thumbsDown", conditions: [
         Condition(.straightThumb, min: 0.8, band: 0.1),
-        Condition(.extThumb, min: 0.55, band: 0.15),
-        Condition(.thumbDirY, max: -0.72, band: 0.15),
+        Condition(.extThumb, min: 0.42, band: 0.15),
+        Condition(.thumbDirY, max: -0.65, band: 0.15),
         down(.reachIndex), down(.reachMiddle), down(.reachRing), down(.reachLittle),
     ])
 
     public static let peace = PoseRule(name: "peace", conditions: [
         up(.reachIndex), up(.reachMiddle), down(.reachRing), down(.reachLittle),
-        Condition(.spreadIndexMiddle, min: 0.34, max: 1.2, band: 0.06),
+        Condition(.spreadIndexMiddle, min: 0.29, max: 1.3, band: 0.05),
         Condition(.palmFacing, min: 0.15, band: 0.15),
         Condition(.indexDirY, min: 0.4, band: 0.2),
     ])
 
+    /// Two fingers like on a trackpad. They often point a little towards the screen, which
+    /// shortens them in the image, and sit slightly apart; the other two must be curled.
     public static let scroll = PoseRule(name: "scroll", conditions: [
-        up(.reachIndex), up(.reachMiddle), down(.reachRing), down(.reachLittle),
-        Condition(.spreadIndexMiddle, max: 0.17, band: 0.05),
-        Condition(.palmFacing, min: 0.15, band: 0.15),
-        Condition(.indexDirY, min: 0.4, band: 0.2),
+        Condition(.reachIndex, min: 0.45, band: 0.15), Condition(.reachMiddle, min: 0.45, band: 0.15),
+        down(.reachRing), down(.reachLittle),
+        Condition(.spreadIndexMiddle, max: 0.23, band: 0.05),
+        Condition(.palmFacing, min: -0.1, band: 0.2),
     ])
 
     public static let lips = PoseRule(name: "lips", conditions: [
         up(.reachIndex), down(.reachMiddle), down(.reachRing), down(.reachLittle),
         Condition(.indexDirY, min: 0.55, band: 0.2),
         Condition(.facePresent, min: 0.5, band: 0.01),
-        Condition(.lipsDistance, max: 0.35, band: 0.1),
+        Condition(.lipsDistance, max: 0.5, band: 0.12),
     ])
 
     public static let ear = PoseRule(name: "ear", conditions: [
         Condition(.facePresent, min: 0.5, band: 0.01),
-        Condition(.earDistance, max: 0.6, band: 0.15),
-        Condition(.faceDY, min: -0.6, max: 0.6, band: 0.2),
-        // Cupped: fingers neither flat nor in a fist.
-        Condition(.openness, min: 0.35, max: 0.9, band: 0.1),
+        Condition(.earDistance, max: 0.9, band: 0.2),
+        Condition(.faceDY, min: -0.8, max: 0.9, band: 0.2),
+        // Cupped: curled anywhere from loosely to well round, but not flat.
+        Condition(.openness, min: 0.05, max: 0.9, band: 0.1),
     ])
 
     public static let pinch = PoseRule(name: "pinch", conditions: [
         // Fingertips a small knob's width apart (2–3 cm), or touching.
-        Condition(.thumbToIndex, max: 0.38, band: 0.12),
+        Condition(.thumbToIndex, max: 0.6, band: 0.15),
         Condition(.reachIndex, max: 0.85, band: 0.1),
         // Holding a knob, the other fingers curl too (unlike an OK sign).
         Condition(.reachMiddle, max: 0.65, band: 0.12),

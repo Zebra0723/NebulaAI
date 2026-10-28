@@ -44,6 +44,27 @@ public struct Hand: Sendable, Equatable {
         (x[j.rawValue], y[j.rawValue])
     }
 
+    /// Fills in finger joints the camera lost (near-zero confidence, often a fingertip behind
+    /// the hand or in front of the face) by continuing the finger's last segment, so a hand
+    /// with one hidden fingertip is still a hand. Knuckles and the wrist are never invented.
+    @inline(__always) public mutating func fillMissingJoints(below threshold: Float = 0.05) {
+        var base = 1
+        while base <= 17 { // thumb CMC, then each knuckle
+            var j = base + 1
+            while j <= base + 3 {
+                if confidence[j] < threshold {
+                    let parent = j - 1
+                    let grand = parent == base ? 0 : parent - 1
+                    x[j] = x[parent] + (x[parent] - x[grand]) * 0.7
+                    y[j] = y[parent] + (y[parent] - y[grand]) * 0.7
+                    confidence[j] = threshold
+                }
+                j += 1
+            }
+            base += 4
+        }
+    }
+
     @inline(__always) public mutating func set(_ j: Joint, _ px: Float, _ py: Float, confidence c: Float = 1) {
         x[j.rawValue] = px
         y[j.rawValue] = py

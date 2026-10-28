@@ -87,6 +87,8 @@ public struct NebulaModel: Codable, Sendable, Equatable {
     public var flipChirality = false
     /// Personal calibration's adjusted pose rules, keyed by pose name. Missing = built-in.
     public var rules: [String: PoseRule] = [:]
+    /// The `BuiltinRules.version` those personal rules were derived from.
+    public var rulesVersion: Int?
 
     public init(source: String, classifier: ClassifierModel, tuning: [String: GestureTuning] = [:]) {
         self.source = source

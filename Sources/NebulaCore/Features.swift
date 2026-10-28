@@ -72,8 +72,8 @@ struct FacePoints {
 public enum FeatureExtractor {
     /// Minimum confidences for a usable hand: the joints that carry the shape must be seen.
     public struct Quality: Sendable, Codable, Equatable {
-        public var structural: Float = 0.3   // wrist, knuckles, thumb base
-        public var tips: Float = 0.1         // a curled fingertip is often half-hidden
+        public var structural: Float = 0.2   // wrist, knuckles, thumb base
+        public var tips: Float = 0.02        // a curled fingertip is often half-hidden (and filled in)
         public var edgeMargin: Float = 0.015 // a hand touching the frame edge is half a hand
         public var minHandSize: Float = 0.055
         public var maxHandSize: Float = 0.45
