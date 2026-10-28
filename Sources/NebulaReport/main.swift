@@ -113,6 +113,14 @@ case "report", "gate":
     let report = makeReport(model)
     print(report.text())
     if let json = option("json") { writeJSON(report, to: json) }
+    if let gateFile = option("gate-file") {
+        // What the app may let act: only gestures that met every target.
+        struct GateFile: Encodable { let mode: String; let passing: [String]; let generatedAt: Double; let summary: String }
+        let failing = Gesture.allCases.map(\.rawValue).filter { !report.passing.contains($0) }
+        writeJSON(GateFile(mode: "proven", passing: report.synthetic ? [] : report.passing, generatedAt: report.generatedAt,
+                           summary: report.pass ? "Every target met on held-out sessions." :
+                               "Below target, so switched off: \(failing.joined(separator: ", "))."), to: gateFile)
+    }
     if command == "gate" {
         if report.synthetic && !flag("allow-synthetic") {
             print("GATE: FAIL. The test data is synthetic; only your recordings can pass the gate.")
@@ -210,7 +218,7 @@ case "personalize":
     guard let dir = option("enrollment"), let out = option("out") else { fail("personalize needs --enrollment DIR --out FILE") }
     let model = loadModel(modelPath)
     let enrollment = (try? Recording.loadAll(in: URL(fileURLWithPath: dir))) ?? []
-    let personal = Trainer.personalize(model, enrollment: enrollment, log: { print("  " + $0) })
+    let personal = Trainer.personalize(model, enrollment: enrollment, library: loadData(), log: { print("  " + $0) })
     do { try personal.encoded().write(to: URL(fileURLWithPath: out)) } catch { fail("\(error)") }
     print("Wrote \(out)")
 

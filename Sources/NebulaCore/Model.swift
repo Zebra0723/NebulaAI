@@ -124,6 +124,14 @@ public struct NebulaModel: Codable, Sendable, Equatable {
         return try encoder.encode(self)
     }
 
+    /// A short fingerprint of the model, so a report can say which model it measured.
+    public var fingerprint: String {
+        let data = (try? encoded()) ?? Data()
+        var h: UInt64 = 0xcbf2_9ce4_8422_2325
+        for b in data { h = (h ^ UInt64(b)) &* 0x100_0000_01b3 }
+        return String(h, radix: 16)
+    }
+
     public static func decode(_ data: Data) throws -> NebulaModel {
         try JSONDecoder().decode(NebulaModel.self, from: data)
     }

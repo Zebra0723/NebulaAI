@@ -1,0 +1,39 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  core:
+    name: Recognizer, tests and gates (Linux)
+    runs-on: ubuntu-24.04
+    container: swift:6.1-noble
+    steps:
+      - uses: actions/checkout@v4
+      - name: Unit tests, latency gate, no-allocation proof
+        run: swift test -c release -Xswiftc -enable-testing
+      - name: Pipeline on synthetic sessions (not a target, a smoke test)
+        run: |
+          swift build -c release
+          BIN=$(swift build -c release --show-bin-path)
+          $BIN/nebula-report synth --out /tmp/synth --sessions 4 --reps 10 --minutes 3
+          $BIN/nebula-report train --data /tmp/synth --out /tmp/model.json
+          $BIN/nebula-report report --data /tmp/synth --model /tmp/model.json || true
+          $BIN/nebula-report bench --data /tmp/synth --model /tmp/model.json
+
+  app:
+    name: Nebula.app (macOS)
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the app
+        run: swift build -c release
+      - name: Tests on macOS
+        run: swift test
+      - name: Bundle (recording build, ad-hoc signed)
+        run: scripts/build-app.sh --recorder
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Nebula-recorder-build
+          path: build/Nebula.app

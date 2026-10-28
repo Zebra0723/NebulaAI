@@ -205,6 +205,8 @@ public struct GateCheck: Codable, Sendable {
 public struct Report: Codable, Sendable {
     public var generatedAt: Double
     public var modelSource: String
+    /// Which model these numbers are for (`NebulaModel.fingerprint`).
+    public var modelFingerprint: String = ""
     public var synthetic: Bool
     public var testSessions: [String]
     public var evaluation: EvaluationResult
@@ -252,7 +254,7 @@ public struct Report: Codable, Sendable {
         }
         var holds: [String: Double] = [:]
         for g in Gesture.allCases where g.kind != .movement { holds[g.rawValue] = model.tuning(for: g).hold }
-        return Report(generatedAt: Date().timeIntervalSince1970, modelSource: model.source, synthetic: synthetic,
+        return Report(generatedAt: Date().timeIntervalSince1970, modelSource: model.source, modelFingerprint: model.fingerprint, synthetic: synthetic,
                       testSessions: e.sessions, evaluation: e, pipeline: pipeline, checks: checks,
                       passing: passing.sorted(), holds: holds, notes: notes)
     }

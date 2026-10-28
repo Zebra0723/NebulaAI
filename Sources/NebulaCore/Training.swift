@@ -189,18 +189,19 @@ public enum Trainer {
 
     // MARK: - Personal calibration
 
-    /// Adapts a model to one person from about ten examples of each gesture: their examples
-    /// join Judge B (counting three times as much as anyone else's), and Judge A's ranges
-    /// widen to take in their hands, by no more than each condition's band.
-    public static func personalize(_ model: NebulaModel, enrollment: [Recording], log: (String) -> Void = { _ in }) -> NebulaModel {
+    /// Adapts a model to one person from about ten examples of each gesture. Judge A's ranges
+    /// widen to take in their hands (by no more than each condition's band), the camera's
+    /// left/right convention is checked, and Judge B is retrained on everything recorded so
+    /// far with their examples counting three times.
+    public static func personalize(_ model: NebulaModel, enrollment: [Recording], library: [Recording] = [],
+                                   customs: [CustomGesture] = [], log: (String) -> Void = { _ in }) -> NebulaModel {
         var model = model
         // Does this camera report hands swapped? An open palm toward the camera must face it.
         var facing: [Float] = []
         for rec in enrollment {
             let r = Recognizer(model: model)
             for frame in rec.frames {
-                guard let w = rec.labels.first(where: { frame.time >= $0.start && frame.time <= $0.end && $0.gesture == "openPalm" }) else { continue }
-                _ = w
+                guard rec.labels.contains(where: { frame.time >= $0.start && frame.time <= $0.end && $0.gesture == "openPalm" }) else { continue }
                 let o = r.observe(frame)
                 if o.valid && !o.partial { facing.append(o.features[Feature.palmFacing.rawValue]) }
             }
@@ -213,27 +214,19 @@ public enum Trainer {
             }
         }
 
-        let ex = examples(from: enrollment, model: model, weight: 3)
-        let gestureExamples = ex.filter { $0.1 != 0 }
-        model.classifier.add(gestureExamples.map { ($0.0, $0.1) }, weight: 3)
-        log("Judge B: added \(gestureExamples.count) of your frames")
-
+        let mine = examples(from: enrollment, model: model, weight: 3)
         var rules = model.poseRules()
         for p in 1..<rules.count {
-            let mine = gestureExamples.filter { $0.1 == p }.map(\.0)
-            guard mine.count >= 20 else { continue }
+            let values = mine.filter { $0.1 == p }.map(\.0)
+            guard values.count >= 20 else { continue }
             var rule = rules[p]
             for (ci, c) in rule.conditions.enumerated() {
                 guard let f = Feature.named(c.feature) else { continue }
-                let values = mine.map { $0[f.rawValue] }.sorted()
-                let lo = values[Int(Double(values.count) * 0.05)]
-                let hi = values[min(values.count - 1, Int(Double(values.count) * 0.95))]
-                if let m = c.min, lo < m {
-                    rule.conditions[ci].min = max(lo, m - c.band * 0.75)
-                }
-                if let m = c.max, hi > m {
-                    rule.conditions[ci].max = min(hi, m + c.band * 0.75)
-                }
+                let sorted = values.map { $0[f.rawValue] }.sorted()
+                let lo = sorted[Int(Double(sorted.count) * 0.05)]
+                let hi = sorted[min(sorted.count - 1, Int(Double(sorted.count) * 0.95))]
+                if let m = c.min, lo < m { rule.conditions[ci].min = max(lo, m - c.band * 0.75) }
+                if let m = c.max, hi > m { rule.conditions[ci].max = min(hi, m + c.band * 0.75) }
             }
             if rule != rules[p] {
                 model.rules[rule.name] = rule
@@ -241,7 +234,15 @@ public enum Trainer {
             }
             rules[p] = rule
         }
-        model.source += " + personal"
+
+        let (train, _, _) = split(library)
+        let gestureFrames = mine.filter { $0.1 != 0 }.count
+        // Custom gestures' examples live with the enrollment sessions; keep their classes.
+        let customExamples = customs.isEmpty ? [] : examples(from: enrollment, model: model, customs: customs, weight: 3)
+            .filter { $0.1 >= Pose.builtinCount }
+        model.classifier = trainClassifier(train, base: model, customs: customs, extra: mine + customExamples)
+        log("Judge B: retrained on \(train.count) sessions plus \(gestureFrames) frames of yours")
+        if !model.source.hasSuffix("+ personal") { model.source += " + personal" }
         return model
     }
 }

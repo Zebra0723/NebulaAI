@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleName</key>
+    <string>Nebula</string>
+    <key>CFBundleDisplayName</key>
+    <string>Nebula</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
+    <key>CFBundleIdentifier</key>
+    <string>ai.galaxy.nebula</string>
+    <key>CFBundleExecutable</key>
+    <string>Nebula</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleShortVersionString</key>
+    <string>1.0.0</string>
+    <key>CFBundleVersion</key>
+    <string>1</string>
+    <key>LSMinimumSystemVersion</key>
+    <string>14.0</string>
+    <key>LSUIElement</key>
+    <true/>
+    <key>NSCameraUsageDescription</key>
+    <string>Nebula watches for hand gestures while you have it switched on. Frames stay in memory for one detection and are never saved or sent; only the 21 points of each hand are used.</string>
+    <key>NSAppleEventsUsageDescription</key>
+    <string>Nebula plays, pauses and skips in the app you're using (Safari, Chrome, Arc, Keynote, Spotify, Music) when you make a gesture, and only in that app.</string>
+</dict>
+</plist>
