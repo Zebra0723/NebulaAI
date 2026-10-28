@@ -90,7 +90,7 @@ final class Recorder: ObservableObject {
             switch plan {
             case .gestures: await self.runGestures(reps: c.reps)
             case .enrollment: await self.runGestures(reps: 10)
-            case .nearMiss: await self.runNearMisses(reps: max(3, c.reps / 3))
+            case .nearMiss: await self.runNearMisses(reps: c.reps)
             case .nothing: await self.runNothing(minutes: c.minutes)
             }
             self.stop(saved: !Task.isCancelled)

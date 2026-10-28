@@ -1,0 +1,454 @@
+diff --git a/src/client.ts b/src/client.ts
+index 710efe4..c394206 100644
+--- a/src/client.ts
++++ b/src/client.ts
+@@ -31,6 +31,17 @@ export interface LinkInboxItem {
+   replyTo: string;
+ }
+ 
++export interface LinkApproval {
++  id: string;
++  from: string;
++  title: string;
++  detail: string;
++  status: "pending" | "approved" | "rejected" | "expired" | "cancelled";
++  decidedBy: string;
++  via: string;
++  expiresAt: number;
++}
++
+ export interface LinkMemory {
+   id: string;
+   text: string;
+@@ -152,6 +163,27 @@ export class GalaxyLink {
+     return this.call<LinkTask>("POST", `/v1/tasks/${id}/done`, { ok, result });
+   }
+ 
++  /**
++   * Asks the user a yes-or-no and waits for the answer (a thumbs up or down to Nebula, or
++   * another body). Resolves to the settled approval, or null if Link isn't there.
++   */
++  async ask(title: string, opts: { detail?: string; ttlSeconds?: number } = {}): Promise<LinkApproval | null> {
++    const created = await this.call<LinkApproval>("POST", "/v1/approvals", { title, ...opts });
++    if (!created) return null;
++    const deadline = Date.now() + (opts.ttlSeconds ?? 120) * 1000 + 5000;
++    while (Date.now() < deadline) {
++      const now = await this.call<LinkApproval>("GET", `/v1/approvals/${created.id}?wait=25`, undefined, 30_000);
++      if (!now) return null;
++      if (now.status !== "pending") return now;
++    }
++    return null;
++  }
++
++  /** Answers another body's approval. */
++  decide(id: string, approve: boolean, via = "text") {
++    return this.call<LinkApproval>("POST", `/v1/approvals/${id}/decide`, { decision: approve ? "approve" : "reject", via });
++  }
++
+   /** A message for the user, delivered wherever they are. Only ever for something they asked for. */
+   deliver(text: string) {
+     return this.call("POST", "/v1/deliver", { text });
+diff --git a/src/link.ts b/src/link.ts
+index c5220b8..f50f33d 100644
+--- a/src/link.ts
++++ b/src/link.ts
+@@ -7,7 +7,7 @@
+ 
+ import { spawn } from "node:child_process";
+ import { PresenceReader } from "./presence";
+-import { Store, type Body, type BodyID, type ChatMessage, type InboxItem, type Task } from "./store";
++import { Store, type Approval, type Body, type BodyID, type ChatMessage, type InboxItem, type Task } from "./store";
+ 
+ /** How a body reaches you. Link uses this to deliver results, never to start a conversation. */
+ export type Surface = "phone" | "screen" | "voice" | "none";
+@@ -67,9 +67,13 @@ export const PROFILES: Record<BodyID, BodyProfile> = {
+       "Hi everyone, I'm Zenith. Give me the big missions, the ones that take hours or days. I work on " +
+       "my own computer in the cloud, overnight if I have to, and bring back the finished thing.",
+   },
+-  nebula: { name: "Nebula", powers: [], surface: "none", launch: "", intro: "" },
++  nebula: { name: "Nebula", powers: ["gestures", "approvals"], surface: "none", launch: "", intro: "" },
+ };
+ 
++/** How long an approval waits for an answer unless the asker says otherwise. */
++export const APPROVAL_TTL_MS = 120_000;
++const APPROVAL_MAX_TTL_MS = 3_600_000;
++
+ /** A body counts as running if it has been heard from this recently. */
+ export const ONLINE_WITHIN_MS = 90_000;
+ const LAUNCH_COOLDOWN_MS = 60_000;
+@@ -95,6 +99,11 @@ export class Link {
+   private chatWaiters = new Set<() => void>();
+   private inboxWaiters = new Map<BodyID, Set<() => void>>();
+   private launchedAt = new Map<BodyID, number>();
++  /** Bumped whenever the set of pending approvals changes, for long polls. */
++  private approvalVersion = 1;
++  private approvalListWaiters = new Set<() => void>();
++  private approvalWaiters = new Map<string, Set<() => void>>();
++  private expiryTimers = new Map<string, ReturnType<typeof setTimeout>>();
+   launcher: (command: string) => void = defaultLauncher;
+ 
+   constructor(
+@@ -349,6 +358,121 @@ export class Link {
+     return this.store.takeInbox(body);
+   }
+ 
++  // --------------------------------------------------------------- approvals
++
++  /**
++   * A body asks the user a yes-or-no. It reaches whoever can answer: Nebula arms its camera
++   * for a thumbs up or down, Galaxy Chat shows it. The asker hears the answer the moment it's
++   * given (`waitForDecision`), never by polling.
++   */
++  requestApproval(from: BodyID, input: { title?: unknown; detail?: unknown; ttlSeconds?: unknown }): Approval {
++    const title = typeof input.title === "string" ? input.title.trim() : "";
++    if (!title) throw new LinkError(400, "an approval needs a title: the question being asked");
++    const ttl = Number.isFinite(input.ttlSeconds) ? Math.min(Math.max(Number(input.ttlSeconds) * 1000, 5_000), APPROVAL_MAX_TTL_MS) : APPROVAL_TTL_MS;
++    const approval = this.store.addApproval({
++      from,
++      title: title.slice(0, 200),
++      detail: typeof input.detail === "string" ? input.detail.slice(0, 4000) : "",
++      expiresAt: this.store.now() + ttl,
++    });
++    this.store.addEvent(from, "approval", `asked for a yes or no: ${approval.title}`, approval.id);
++    this.say(from, "approval", `Waiting on a yes or no: ${approval.title}`);
++    const timer = setTimeout(() => this.expire(), ttl + 5);
++    (timer as any).unref?.();
++    this.expiryTimers.set(approval.id, timer);
++    this.approvalsChanged();
++    return approval;
++  }
++
++  approval(id: string): Approval {
++    this.expire();
++    const a = this.store.approval(id);
++    if (!a) throw new LinkError(404, "no such approval");
++    return a;
++  }
++
++  pendingApprovals(): { version: number; pending: Approval[] } {
++    this.expire();
++    return { version: this.approvalVersion, pending: this.store.pendingApprovals() };
++  }
++
++  /** The pending set as soon as it differs from `since` (a version), waiting up to `waitMs`. */
++  async pendingApprovalsSince(since: number, waitMs: number): Promise<{ version: number; pending: Approval[] }> {
++    const now = this.pendingApprovals();
++    if (now.version !== since || waitMs <= 0) return now;
++    await new Promise<void>((resolve) => {
++      const done = () => {
++        clearTimeout(timer);
++        this.approvalListWaiters.delete(done);
++        resolve();
++      };
++      const timer = setTimeout(done, waitMs);
++      this.approvalListWaiters.add(done);
++    });
++    return this.pendingApprovals();
++  }
++
++  /** Approve or reject. Any body but the asker may answer; the first answer wins. */
++  decide(id: string, by: BodyID, decision: unknown, via: unknown): Approval {
++    if (decision !== "approve" && decision !== "reject") throw new LinkError(400, 'decision must be "approve" or "reject"');
++    const current = this.approval(id);
++    if (current.from === by) throw new LinkError(403, "a body can't answer its own question");
++    if (current.status !== "pending") throw new LinkError(409, `that approval is already ${current.status}`);
++    const how = typeof via === "string" && /^[a-z_ -]{1,32}$/.test(via) ? via : "";
++    const settled = this.store.settleApproval(id, decision === "approve" ? "approved" : "rejected", by, how);
++    if (!settled) throw new LinkError(409, "that approval was just answered");
++    const word = decision === "approve" ? "Approved" : "Rejected";
++    this.store.addEvent(by, "approval", `${word.toLowerCase()}: ${settled.title}`, settled.id);
++    this.say(by, "approval", `@${this.profile(settled.from).name} ${word}${how === "gesture" ? " with a gesture" : ""}: ${settled.title}`);
++    this.settled(settled);
++    return settled;
++  }
++
++  cancelApproval(id: string, by: BodyID): Approval {
++    const current = this.approval(id);
++    if (current.from !== by) throw new LinkError(403, "only the body that asked can cancel");
++    const settled = this.store.settleApproval(id, "cancelled", by, "");
++    if (!settled) throw new LinkError(409, `that approval is already ${current.status}`);
++    this.settled(settled);
++    return settled;
++  }
++
++  /** For the asker: returns as soon as the approval is answered, or after `waitMs`. */
++  async waitForDecision(id: string, waitMs: number): Promise<Approval> {
++    const now = this.approval(id);
++    if (now.status !== "pending" || waitMs <= 0) return now;
++    await new Promise<void>((resolve) => {
++      const set = this.approvalWaiters.get(id) ?? new Set();
++      this.approvalWaiters.set(id, set);
++      const done = () => {
++        clearTimeout(timer);
++        set.delete(done);
++        resolve();
++      };
++      const timer = setTimeout(done, waitMs);
++      set.add(done);
++    });
++    return this.approval(id);
++  }
++
++  private expire() {
++    for (const a of this.store.expireApprovals()) this.settled(a);
++  }
++
++  private settled(a: Approval) {
++    const timer = this.expiryTimers.get(a.id);
++    if (timer) clearTimeout(timer);
++    this.expiryTimers.delete(a.id);
++    for (const wake of [...(this.approvalWaiters.get(a.id) ?? [])]) wake();
++    this.approvalWaiters.delete(a.id);
++    this.approvalsChanged();
++  }
++
++  private approvalsChanged() {
++    this.approvalVersion++;
++    for (const wake of [...this.approvalListWaiters]) wake();
++  }
++
+   // -------------------------------------------------------------------- chat
+ 
+   /** Posts to Galaxy Chat as `body`. Only bodies post; the human watches. */
+diff --git a/src/server.ts b/src/server.ts
+index c36e575..30a3b7b 100644
+--- a/src/server.ts
++++ b/src/server.ts
+@@ -176,6 +176,23 @@ async function route(link: Link, token: string, req: Request): Promise<Response>
+     return json(link.say(who, "message", String(text ?? "")), 201);
+   }
+ 
++  // ------------------------------------------------------------- approvals
++  if (path === "/v1/approvals" && method === "POST") return json(link.requestApproval(needBody(), await input()), 201);
++  if (path === "/v1/approvals/pending" && method === "GET") {
++    const since = Number(url.searchParams.get("since") ?? 0) || 0;
++    return json(await link.pendingApprovalsSince(since, wait()));
++  }
++  const approvalMatch = path.match(/^\/v1\/approvals\/(a_[a-z0-9]+)(?:\/(decide|cancel))?$/);
++  if (approvalMatch) {
++    const [, id, action] = approvalMatch as unknown as [string, string, string | undefined];
++    if (!action && method === "GET") return json(await link.waitForDecision(id, wait()));
++    if (action === "decide" && method === "POST") {
++      const { decision, via } = await input();
++      return json(link.decide(id, needBody(), decision, via));
++    }
++    if (action === "cancel" && method === "POST") return json(link.cancelApproval(id, needBody()));
++  }
++
+   // -------------------------------------------------------------- delivery
+   if (path === "/v1/deliver" && method === "POST") return json(link.deliver(needBody(), (await input()).text), 201);
+   if (path === "/v1/inbox" && method === "GET") return json(await link.inbox(needBody(), wait()));
+diff --git a/src/store.ts b/src/store.ts
+index 2506ebb..51e4606 100644
+--- a/src/store.ts
++++ b/src/store.ts
+@@ -54,7 +54,7 @@ export interface Task {
+ }
+ 
+ /** A line in Galaxy Chat, the group chat the bodies share. Only bodies post; you watch. */
+-export type ChatKind = "intro" | "message" | "handoff" | "claimed" | "result";
++export type ChatKind = "intro" | "message" | "handoff" | "claimed" | "result" | "approval";
+ 
+ export interface ChatMessage {
+   id: number;
+@@ -65,6 +65,23 @@ export interface ChatMessage {
+   at: number;
+ }
+ 
++export type ApprovalStatus = "pending" | "approved" | "rejected" | "expired" | "cancelled";
++
++/** A yes-or-no a body is waiting on. Any other body (Nebula's thumbs, Comet's text) can answer it. */
++export interface Approval {
++  id: string;
++  from: BodyID;
++  title: string;
++  detail: string;
++  status: ApprovalStatus;
++  /** Which body answered, and how ("gesture", "text", ...). */
++  decidedBy: BodyID;
++  via: string;
++  createdAt: number;
++  expiresAt: number;
++  decidedAt: number;
++}
++
+ export interface InboxItem {
+   id: number;
+   body: BodyID;
+@@ -148,6 +165,19 @@ create table if not exists chat (
+   at integer not null
+ );
+ create index if not exists chat_body on chat(body, kind);
++create table if not exists approvals (
++  id text primary key,
++  sender text not null,
++  title text not null,
++  detail text not null default '',
++  status text not null,
++  decided_by text not null default '',
++  via text not null default '',
++  created_at integer not null,
++  expires_at integer not null,
++  decided_at integer not null default 0
++);
++create index if not exists approvals_status on approvals(status, created_at);
+ `;
+ 
+ /** Two memories are the same memory if they differ only in case, spacing and end punctuation. */
+@@ -384,6 +414,41 @@ export class Store {
+     return rows.map(rowToInbox).sort((a, b) => a.id - b.id);
+   }
+ 
++  // --------------------------------------------------------------- approvals
++
++  addApproval(a: Pick<Approval, "from" | "title" | "detail" | "expiresAt">): Approval {
++    const id = newID("a");
++    this.db
++      .query("insert into approvals (id, sender, title, detail, status, created_at, expires_at) values (?, ?, ?, ?, 'pending', ?, ?)")
++      .run(id, a.from, a.title, a.detail, this.now(), a.expiresAt);
++    return this.approval(id)!;
++  }
++
++  approval(id: string): Approval | null {
++    const row = this.db.query("select * from approvals where id = ?").get(id) as any;
++    return row ? rowToApproval(row) : null;
++  }
++
++  pendingApprovals(): Approval[] {
++    return (this.db.query("select * from approvals where status = 'pending' order by created_at").all() as any[]).map(rowToApproval);
++  }
++
++  /** Settles a pending approval; null if it was already settled. */
++  settleApproval(id: string, status: Exclude<ApprovalStatus, "pending">, by: BodyID, via: string): Approval | null {
++    const changed = this.db
++      .query("update approvals set status = ?, decided_by = ?, via = ?, decided_at = ? where id = ? and status = 'pending'")
++      .run(status, by, via, this.now(), id).changes;
++    return changed ? this.approval(id) : null;
++  }
++
++  /** Pending approvals past their deadline become expired. Returns them. */
++  expireApprovals(): Approval[] {
++    const rows = this.db
++      .query("update approvals set status = 'expired', decided_at = ? where status = 'pending' and expires_at <= ? returning *")
++      .all(this.now(), this.now()) as any[];
++    return rows.map(rowToApproval);
++  }
++
+   pendingInbox(body: BodyID): number {
+     return (this.db.query("select count(*) as n from inbox where body = ? and delivered_at = 0").get(body) as any).n;
+   }
+@@ -418,6 +483,21 @@ function rowToChat(r: any): ChatMessage {
+   return { id: r.id, body: r.body, kind: r.kind, text: r.text, taskId: r.task_id, at: r.at };
+ }
+ 
++function rowToApproval(r: any): Approval {
++  return {
++    id: r.id,
++    from: r.sender,
++    title: r.title,
++    detail: r.detail,
++    status: r.status,
++    decidedBy: r.decided_by,
++    via: r.via,
++    createdAt: r.created_at,
++    expiresAt: r.expires_at,
++    decidedAt: r.decided_at,
++  };
++}
++
+ function rowToInbox(r: any): InboxItem {
+   return {
+     id: r.id,
+diff --git a/test/approvals.test.ts b/test/approvals.test.ts
+new file mode 100644
+index 0000000..d1b7773
+--- /dev/null
++++ b/test/approvals.test.ts
+@@ -0,0 +1,87 @@
++import { afterEach, beforeEach, describe, expect, test } from "bun:test";
++import { Link, LinkError } from "../src/link";
++import { PresenceReader } from "../src/presence";
++import { handle } from "../src/server";
++import { Store } from "../src/store";
++
++let store: Store;
++let link: Link;
++let clock: number;
++
++beforeEach(() => {
++  store = new Store(":memory:");
++  clock = 1_000_000;
++  store.now = () => clock;
++  link = new Link(store, new PresenceReader(() => 10));
++  link.launcher = () => {};
++  link.hello("comet", {});
++  link.hello("nebula", {});
++});
++afterEach(() => store.close());
++
++describe("approvals", () => {
++  test("a body asks, Nebula answers, and the asker hears it at once", async () => {
++    const a = link.requestApproval("comet", { title: "Send the email to Priya?" });
++    expect(a.status).toBe("pending");
++    const waiting = link.waitForDecision(a.id, 10_000);
++    const started = Date.now();
++    setTimeout(() => link.decide(a.id, "nebula", "approve", "gesture"), 20);
++    const settled = await waiting;
++    expect(settled.status).toBe("approved");
++    expect(settled.decidedBy).toBe("nebula");
++    expect(settled.via).toBe("gesture");
++    expect(Date.now() - started).toBeLessThan(500);
++    expect(store.chat().some((m) => m.kind === "approval" && m.text.includes("Approved with a gesture"))).toBe(true);
++  });
++
++  test("Nebula's long poll wakes the moment something is pending", async () => {
++    const { version } = link.pendingApprovals();
++    const poll = link.pendingApprovalsSince(version, 10_000);
++    setTimeout(() => link.requestApproval("comet", { title: "Deploy?" }), 20);
++    const started = Date.now();
++    const next = await poll;
++    expect(next.pending.map((p) => p.title)).toEqual(["Deploy?"]);
++    expect(next.version).not.toBe(version);
++    expect(Date.now() - started).toBeLessThan(500);
++  });
++
++  test("the first answer wins, and nobody answers their own question", () => {
++    const a = link.requestApproval("comet", { title: "Book it?" });
++    expect(() => link.decide(a.id, "comet", "approve", "")).toThrow(LinkError);
++    link.decide(a.id, "nebula", "reject", "gesture");
++    expect(() => link.decide(a.id, "nova", "approve", "")).toThrow("already rejected");
++    expect(() => link.decide(a.id, "nebula", "maybe", "")).toThrow();
++  });
++
++  test("unanswered approvals expire, and leave the pending list", () => {
++    const a = link.requestApproval("comet", { title: "Quick?", ttlSeconds: 10 });
++    expect(link.pendingApprovals().pending).toHaveLength(1);
++    clock += 11_000;
++    expect(link.pendingApprovals().pending).toHaveLength(0);
++    expect(link.approval(a.id).status).toBe("expired");
++  });
++
++  test("only the asker can cancel", () => {
++    const a = link.requestApproval("comet", { title: "Run it?" });
++    expect(() => link.cancelApproval(a.id, "nebula")).toThrow();
++    expect(link.cancelApproval(a.id, "comet").status).toBe("cancelled");
++  });
++
++  test("over HTTP", async () => {
++    const req = (method: string, path: string, body: string, data?: unknown) =>
++      handle(link, "tok", new Request("http://127.0.0.1:7740" + path, {
++        method,
++        headers: { authorization: "Bearer tok", "x-galaxy-body": body, ...(data ? { "content-type": "application/json" } : {}) },
++        body: data ? JSON.stringify(data) : undefined,
++      }));
++    const created = await (await req("POST", "/v1/approvals", "comet", { title: "Ship?" })).json();
++    expect(created.status).toBe("pending");
++    const pending = await (await req("GET", "/v1/approvals/pending?since=0", "nebula")).json();
++    expect(pending.pending[0].id).toBe(created.id);
++    const decided = await (await req("POST", `/v1/approvals/${created.id}/decide`, "nebula", { decision: "approve", via: "gesture" })).json();
++    expect(decided.status).toBe("approved");
++    const seen = await (await req("GET", `/v1/approvals/${created.id}?wait=1`, "comet")).json();
++    expect(seen.status).toBe("approved");
++    expect((await req("POST", "/v1/approvals", "comet", {})).status).toBe(400);
++  });
++});

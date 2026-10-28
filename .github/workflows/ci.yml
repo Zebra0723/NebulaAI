@@ -30,7 +30,7 @@ jobs:
       - name: Build the app
         run: swift build -c release
       - name: Tests on macOS
-        run: swift test
+        run: swift test -c release -Xswiftc -enable-testing
       - name: Bundle (recording build, ad-hoc signed)
         run: scripts/build-app.sh --recorder
       - uses: actions/upload-artifact@v4
