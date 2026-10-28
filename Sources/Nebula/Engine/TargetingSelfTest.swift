@@ -165,10 +165,10 @@ enum TargetingSelfTest {
 
     static func previewPages(_ router: ActionRouter, _ queue: DispatchQueue) async throws {
         let a = makePDF("nebula-test-A.pdf", pages: 5), b = makePDF("nebula-test-B.pdf", pages: 5)
-        NSWorkspace.shared.open([b], withApplicationAt: NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.Preview")!,
+        _ = try await NSWorkspace.shared.open([b], withApplicationAt: NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.Preview")!,
                                 configuration: NSWorkspace.OpenConfiguration())
         await pause(1.5)
-        NSWorkspace.shared.open([a], withApplicationAt: NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.Preview")!,
+        _ = try await NSWorkspace.shared.open([a], withApplicationAt: NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.Preview")!,
                                 configuration: NSWorkspace.OpenConfiguration())
         await pause(1.5)
         await activate("com.apple.Preview")

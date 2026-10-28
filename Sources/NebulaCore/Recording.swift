@@ -207,7 +207,7 @@ public enum RecordingError: Error, CustomStringConvertible {
 }
 
 /// Appends a session to disk as it's recorded, frame by frame, so nothing is lost if the app quits.
-public final class RecordingWriter {
+public final class RecordingWriter: @unchecked Sendable {
     private let handle: FileHandle
     public let url: URL
     private var buffer = ""

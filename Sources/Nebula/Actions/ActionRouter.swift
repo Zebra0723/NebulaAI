@@ -5,7 +5,7 @@ import NebulaCore
 /// Window actions resolve their target at the instant of firing and go only to the
 /// frontmost app's focused window. Every action is timed from the camera frame's arrival
 /// to the moment it's posted, and checked afterwards, off the hot path.
-final class ActionRouter {
+final class ActionRouter: @unchecked Sendable {
     /// Camera frame delivered → action posted, milliseconds.
     let latency = LatencyLog(capacity: 4096)
 

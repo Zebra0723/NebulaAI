@@ -20,7 +20,7 @@ struct LiveSnapshot {
 /// The camera → joints → gesture pipeline. Everything per frame runs on one dedicated
 /// userInteractive serial queue, reuses one hand-pose request and one sequence handler,
 /// and posts actions from right here. Only the snapshot for the UI goes to the main thread.
-final class Pipeline: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
+final class Pipeline: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate, @unchecked Sendable {
     let session = AVCaptureSession()
     let visionQueue = DispatchQueue(label: "ai.galaxy.nebula.vision", qos: .userInteractive)
     private let sessionQueue = DispatchQueue(label: "ai.galaxy.nebula.session", qos: .userInitiated)
