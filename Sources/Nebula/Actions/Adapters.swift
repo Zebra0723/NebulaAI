@@ -76,7 +76,7 @@ final class Adapters {
                 case "paused": done(ActionOutcome(text: "Paused · \(label)", verified: true))
                 case "none": done(ActionOutcome(text: "Nothing playing in this tab", verified: false))
                 default:
-                    done(ActionOutcome(text: "\(name) didn't allow it: turn on Allow JavaScript from Apple Events", verified: false))
+                    done(ActionOutcome(text: self.browserFailure(name), verified: false))
                 }
             }
         case (.keynote, .next), (.keynote, .previous):
@@ -145,11 +145,42 @@ final class Adapters {
     /// Runs a compiled script on the Apple Event queue (call from that queue). nil on error.
     @discardableResult
     private func run(_ source: String) -> String? {
-        guard let s = script(source) else { return nil }
+        lastError = nil
+        guard let s = script(source) else {
+            lastError = (0, "couldn't compile the script")
+            return nil
+        }
         var error: NSDictionary?
         let result = s.executeAndReturnError(&error)
-        if error != nil { return nil }
+        if let error {
+            lastError = ((error[NSAppleScript.errorNumber] as? NSNumber)?.intValue ?? 0,
+                         error[NSAppleScript.errorMessage] as? String ?? "unknown error")
+            return nil
+        }
         return result.stringValue ?? ""
+    }
+
+    /// The last script error on the Apple Event queue: its number and the app's own message.
+    private var lastError: (number: Int, message: String)?
+
+    /// Why a browser refused, in words that say what to do.
+    private func browserFailure(_ name: String) -> String {
+        guard let e = lastError else { return "\(name) didn't answer" }
+        ActionLog.write("Apple Event to \(name) failed: \(e.number) \(e.message)")
+        switch e.number {
+        case -1743:
+            return "Nebula isn't allowed to control \(name): Privacy & Security → Automation"
+        case -1728, -1719:
+            return "No \(name) window to control"
+        case -1712:
+            return "\(name) took too long to answer"
+        default:
+            let m = e.message.lowercased()
+            if m.contains("javascript") && (m.contains("turned off") || m.contains("allow") || m.contains("disabled")) {
+                return "\(name) blocks it: View → Developer → Allow JavaScript from Apple Events"
+            }
+            return "\(name) said: \(e.message) (\(e.number))"
+        }
     }
 
     private static func ping(_ bundleID: String) -> String {
