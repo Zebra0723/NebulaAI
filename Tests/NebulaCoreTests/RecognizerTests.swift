@@ -202,4 +202,20 @@ final class RecognizerTests: XCTestCase {
         }
         XCTAssertTrue(TestKit.fires(events).isEmpty, "\(TestKit.fires(events))")
     }
+
+    func testScrollStartsEvenWhileTheHandDriftsSlowly() {
+        let r = Recognizer(model: TestKit.model)
+        let size: Float = 0.15
+        // About 3 palm lengths a second: too fast for a held gesture, fine for scroll.
+        let events = TestKit.run(r, from: 0, seconds: 0.5) { t in [TestKit.hand(.scroll, at: (0.67, 0.4 + Float(t) * 3 * size), size: size)] }
+        XCTAssertEqual(TestKit.fires(events).map(\.1), [Gesture.scroll.index])
+    }
+
+    func testPeaceAndScrollAreToldApartWhenJudgeAAcceptsBoth() {
+        let r = Recognizer(model: TestKit.model)
+        var events = TestKit.run(r, from: 0, seconds: 0.6) { _ in [TestKit.hand(.peace)] }
+        events += TestKit.run(r, from: 0.6, seconds: 0.4) { _ in [] }
+        events += TestKit.run(r, from: 1.0, seconds: 0.6) { _ in [TestKit.hand(.scroll)] }
+        XCTAssertEqual(TestKit.fires(events).map(\.1), [Gesture.peace.index, Gesture.scroll.index])
+    }
 }

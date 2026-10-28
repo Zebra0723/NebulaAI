@@ -217,6 +217,7 @@ public enum Trainer {
         // Always widen from the current built-in rules, never from an earlier calibration.
         model.rules = [:]
         model.rulesVersion = BuiltinRules.version
+        model.adoptCurrentQuality()
         let mine = examples(from: enrollment, model: model, weight: 3)
         var rules = model.poseRules()
         for p in 1..<rules.count {

@@ -96,6 +96,13 @@ public struct NebulaModel: Codable, Sendable, Equatable {
         self.tuning = tuning
     }
 
+    /// Models saved by earlier versions carry stricter frame-quality limits; use today's.
+    public mutating func adoptCurrentQuality() {
+        let current = FeatureExtractor.Quality()
+        quality.structural = min(quality.structural, current.structural)
+        quality.tips = min(quality.tips, current.tips)
+    }
+
     public func tuning(for gesture: Gesture) -> GestureTuning {
         tuning[gesture.rawValue] ?? NebulaModel.defaultTuning(gesture)
     }

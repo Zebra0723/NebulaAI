@@ -360,9 +360,7 @@ final class Engine: ObservableObject {
         for g in Gesture.allCases { holds[g.index] = m.tuning(for: g).hold }
         for (i, c) in customs.enumerated() { holds[Recognizer.customBase + i] = c.gesture.tuning.hold }
         // Older models stored stricter quality limits; use today's (lost fingertips are filled in).
-        let quality = FeatureExtractor.Quality()
-        m.quality.structural = min(m.quality.structural, quality.structural)
-        m.quality.tips = min(m.quality.tips, quality.tips)
+        m.adoptCurrentQuality()
         pipeline.use(model: m, customs: customs.map(\.gesture), disabled: settings.disabled, lenient: settings.trial)
         let router = self.router, settings = self.settings, customs = self.customs, proven = self.proven
         pipeline.visionQueue.async {

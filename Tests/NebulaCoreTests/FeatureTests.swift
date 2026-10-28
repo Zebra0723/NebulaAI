@@ -116,7 +116,10 @@ final class RuleTests: XCTestCase {
     func testRiskyPairsAreSeparatedByJudgeA() {
         for seed in 1...5 {
             let s = UInt64(seed)
-            XCTAssertLessThan(score(.scroll, TestKit.hand(.peace, seed: s)), 0.3, "peace is not scroll")
+            // A peace sign may also satisfy the scroll rule (fingers pointing at the screen look
+            // like a narrow V); Judge B tells them apart, see RecognizerTests. A fist never does.
+            XCTAssertLessThan(score(.scroll, TestKit.hand(.fist, seed: s)), 0.1, "a fist is not scroll")
+            XCTAssertLessThan(score(.scroll, TestKit.hand(.fistNoThumb, seed: s)), 0.1)
             XCTAssertLessThan(score(.peace, TestKit.hand(.scroll, seed: s)), 0.3, "scroll is not peace")
             XCTAssertLessThan(score(.thumbsDown, TestKit.hand(.thumbsUp, seed: s)), 0.3)
             XCTAssertLessThan(score(.thumbsUp, TestKit.hand(.thumbsDown, seed: s)), 0.3)

@@ -33,7 +33,11 @@ func fail(_ message: String) -> Never {
 
 func loadModel(_ path: String) -> NebulaModel {
     guard let data = FileManager.default.contents(atPath: path) else { fail("no model at \(path)") }
-    do { return try NebulaModel.decode(data) } catch { fail("can't read \(path): \(error)") }
+    do {
+        var model = try NebulaModel.decode(data)
+        model.adoptCurrentQuality()
+        return model
+    } catch { fail("can't read \(path): \(error)") }
 }
 
 func loadData() -> [Recording] {

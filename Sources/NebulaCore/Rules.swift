@@ -54,7 +54,7 @@ public struct PoseRule: Codable, Sendable, Equatable {
 /// where personal calibration is allowed to move them.
 public enum BuiltinRules {
     /// Bumped whenever these rules change, so personal calibration built on older ones is redone.
-    public static let version = 2
+    public static let version = 3
 
     // Reach: about 1 for an extended finger, 0 or below for a curled one.
     static let extended: Float = 0.75
@@ -103,12 +103,15 @@ public enum BuiltinRules {
         Condition(.indexDirY, min: 0.4, band: 0.2),
     ])
 
-    /// Two fingers like on a trackpad. They often point a little towards the screen, which
-    /// shortens them in the image, and sit slightly apart; the other two must be curled.
+    /// Two fingers like on a trackpad. People point them anywhere from up to straight at the
+    /// screen, which in the image makes them short, and hold them together or a little apart.
+    /// So: both fingers straight (little bend, however foreshortened), the other two curled.
+    /// Telling it from a peace sign is Judge B's job; it learns the difference from your hands.
     public static let scroll = PoseRule(name: "scroll", conditions: [
-        Condition(.reachIndex, min: 0.45, band: 0.15), Condition(.reachMiddle, min: 0.45, band: 0.15),
+        Condition(.curlIndex, max: 0.42, band: 0.15), Condition(.curlMiddle, max: 0.42, band: 0.15),
+        Condition(.reachIndex, min: 0.1, band: 0.15), Condition(.reachMiddle, min: 0.1, band: 0.15),
         down(.reachRing), down(.reachLittle),
-        Condition(.spreadIndexMiddle, max: 0.23, band: 0.05),
+        Condition(.spreadIndexMiddle, max: 0.55, band: 0.1),
         Condition(.palmFacing, min: -0.1, band: 0.2),
     ])
 

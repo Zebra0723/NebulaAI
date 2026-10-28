@@ -438,7 +438,10 @@ public final class Recognizer {
             // Judge A alone, only when it is all but certain and B doesn't name another pose.
             let h = poseToHeld[aBest]
             let inPose = h == holdIndex || h == engagedIndex
-            if aBestScore >= (inPose ? held[h].tuning.stay : 0.95) { agreed = aBest }
+            // Only if no other gesture's pose matches too: two at once is a question for Judge B.
+            var rival: Float = 0
+            for p in 1..<poseCount where p != aBest && poseToHeld[p] >= 0 && aScores[p] > rival { rival = aScores[p] }
+            if aBestScore >= (inPose ? held[h].tuning.stay : 0.95) && (inPose || rival < 0.75) { agreed = aBest }
         }
         status.agreed = agreed
 
@@ -455,13 +458,15 @@ public final class Recognizer {
 
         // Holds.
         let still = speed <= m.stillSpeed
+        // Scroll and the knob are about moving: they may start while the hand still drifts.
+        let steadyEnough = speed <= m.stillSpeed * 4
         if holdIndex >= 0 {
             let h = held[holdIndex]
             holdTotal += 1
-            if agreed == h.pose && still { holdAgreed += 1 }
+            if agreed == h.pose && (still || (h.continuous && steadyEnough)) { holdAgreed += 1 }
             // The shape changed: the held pose has gone and another one is clearly there.
             if aScores[h.pose] < h.tuning.stay && aBest != h.pose && aBestScore >= h.tuning.enter { holdChange += 1 } else { holdChange = 0 }
-            if speed > m.stillSpeed * 2 { holdMoving += 1 } else { holdMoving = 0 }
+            if speed > m.stillSpeed * (h.continuous ? 6 : 2) { holdMoving += 1 } else { holdMoving = 0 }
             if holdChange >= 2 || holdMoving >= 2 || (h.settleAfterStrokes && inStroke) {
                 cancelHold()
             } else {
@@ -476,9 +481,9 @@ public final class Recognizer {
                 }
             }
         }
-        if holdIndex < 0 && engagedIndex < 0 && agreed > 0 && still {
+        if holdIndex < 0 && engagedIndex < 0 && agreed > 0 && steadyEnough {
             let h = poseToHeld[agreed]
-            if h >= 0 && enabledFlags[held[h].id] && !needsRelease[h] && t >= cooldownUntil[h]
+            if h >= 0 && (still || held[h].continuous) && enabledFlags[held[h].id] && !needsRelease[h] && t >= cooldownUntil[h]
                 && !(held[h].settleAfterStrokes && (inStroke || t - lastStrokeEnd < m.palmSettle)) {
                 holdIndex = h
                 holdStart = t
