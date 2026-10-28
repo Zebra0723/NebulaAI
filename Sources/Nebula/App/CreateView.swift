@@ -149,18 +149,9 @@ struct CreateView: View {
                 Text("You have \(Recognizer.maxCustoms) custom gestures, the most Nebula keeps. Remove one to add another.")
                     .font(Theme.body(12.5)).foregroundStyle(Theme.warn)
             }
+            if model.turns.isEmpty { suggestions }
             ForEach(model.turns) { turn in
-                HStack {
-                    if turn.fromUser { Spacer(minLength: 120) }
-                    Text(turn.text)
-                        .font(Theme.body(13.5))
-                        .foregroundStyle(Theme.ink)
-                        .padding(.horizontal, 14).padding(.vertical, 10)
-                        .background(turn.fromUser ? Theme.raised : Theme.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Theme.line, lineWidth: turn.fromUser ? 0 : 1))
-                        .textSelection(.enabled)
-                    if !turn.fromUser { Spacer(minLength: 120) }
-                }
+                TurnBubble(turn: turn)
             }
             if let note = model.cometNote { Text(note).font(Theme.mono(11)).foregroundStyle(Theme.ink3) }
             if let design = model.design { designCard(design) }
@@ -180,19 +171,58 @@ struct CreateView: View {
 
     @ViewBuilder private var stageLine: some View {
         switch model.stage {
-        case .designing: Text("Claude is designing…").font(Theme.body(12.5)).foregroundStyle(Theme.contact)
-        case .checking: Text("Checking against your recordings…").font(Theme.body(12.5)).foregroundStyle(Theme.contact)
-        case .recording: Text("Recording examples in Practice…").font(Theme.body(12.5)).foregroundStyle(Theme.contact)
-        case .verifying: Text("Teaching Judge B and testing on held-out examples…").font(Theme.body(12.5)).foregroundStyle(Theme.contact)
+        case .designing: working("Claude is designing…")
+        case .checking: working("Checking against your recordings…")
+        case .recording: working("Recording examples in Practice…")
+        case .verifying: working("Teaching Judge B and testing on held-out examples…")
         default: EmptyView()
         }
     }
 
+    private func working(_ text: String) -> some View {
+        HStack(spacing: 10) {
+            ProgressView().controlSize(.small)
+            Text(text).font(Theme.body(12.5)).foregroundStyle(Theme.contact)
+        }
+    }
+
+    /// Ideas to start from, before the first message.
+    private var suggestions: some View {
+        let ideas: [(String, String)] = [
+            ("arrow.uturn.backward", "Reopen the last closed tab"),
+            ("camera.viewfinder", "Take a screenshot of the window in front"),
+            ("forward.end", "Skip to the next song with two fingers flicked"),
+            ("moon", "Turn on Do Not Disturb"),
+        ]
+        return VStack(alignment: .leading, spacing: 12) {
+            Eyebrow("Try one of these")
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 300), spacing: 12)], alignment: .leading, spacing: 12) {
+                ForEach(ideas.indices, id: \.self) { i in
+                    let idea = ideas[i]
+                    Button { model.draft = idea.1 } label: {
+                        HStack(spacing: 12) {
+                            SymbolTile(symbol: idea.0, tint: Theme.violet, size: 30)
+                            Text(idea.1).font(Theme.body(13)).foregroundStyle(Theme.ink).multilineTextAlignment(.leading)
+                            Spacer(minLength: 0)
+                        }
+                        .padding(12)
+                        .glass(radius: 14)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+    }
+
     private func designCard(_ d: GestureDesigner.Design) -> some View {
-        Panel {
+        Panel(glow: Theme.violet) {
             VStack(alignment: .leading, spacing: 12) {
                 Eyebrow("Design")
-                Text(d.spec.name).font(Theme.display(20))
+                HStack(spacing: 12) {
+                    SymbolTile(symbol: "wand.and.stars", tint: Theme.rose, size: 36)
+                    Text(d.spec.name).font(Theme.display(22))
+                }
                 Text(d.spec.movement).font(Theme.body(13.5)).foregroundStyle(Theme.ink2)
                 Text("Action: \(d.spec.action.summary)").font(Theme.body(13))
                 Text(String(format: "Hold %.2f s · %d conditions", d.spec.hold, d.spec.rule.conditions.count))
@@ -225,5 +255,39 @@ struct CreateView: View {
                 }
             }
         }
+    }
+}
+
+/// One message: yours on the right in violet, Claude's on the left in glass, with Nebula's mark.
+private struct TurnBubble: View {
+    let turn: CreateModel.Turn
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            if turn.fromUser { Spacer(minLength: 120) } else {
+                NebulaGlyph().frame(width: 18, height: 18).padding(.top, 10)
+            }
+            Text(turn.text)
+                .font(Theme.body(13.5))
+                .foregroundStyle(Theme.ink)
+                .lineSpacing(2)
+                .padding(.horizontal, 15).padding(.vertical, 11)
+                .background {
+                    if turn.fromUser {
+                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .fill(LinearGradient(colors: [Theme.violet.opacity(0.34), Theme.violet.opacity(0.18)], startPoint: .topLeading, endPoint: .bottomTrailing))
+                    }
+                }
+                .modifier(BubbleGlass(on: !turn.fromUser))
+                .textSelection(.enabled)
+            if !turn.fromUser { Spacer(minLength: 120) }
+        }
+    }
+}
+
+private struct BubbleGlass: ViewModifier {
+    let on: Bool
+    @ViewBuilder func body(content: Content) -> some View {
+        if on { content.glass(radius: 16) } else { content }
     }
 }

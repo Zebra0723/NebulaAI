@@ -14,7 +14,8 @@ struct SettingsView: View {
 
     var body: some View {
         Page {
-            PageTitle(eyebrow: "Settings", title: "How Nebula behaves")
+            PageTitle(eyebrow: "Settings", title: "How Nebula behaves",
+                      subtitle: "Nothing here changes what counts as a gesture. That comes from your recordings.")
             section("Turning on and off") {
                 row("Auto-off", "Disarm after this long with no hand in view.") {
                     Picker("", selection: $engine.settings.autoOffMinutes) {
@@ -114,7 +115,8 @@ struct SettingsView: View {
                         .textSelection(.enabled)
                         .padding(14)
                 }
-                .background(Theme.ground, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .background(Theme.ground.opacity(0.6), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Theme.line, lineWidth: 1))
             } else {
                 Text(engine.gate.summary.isEmpty ? "No report yet. Record sessions in Practice, then train." : engine.gate.summary)
                     .font(Theme.body(12.5)).foregroundStyle(Theme.ink3)
@@ -126,16 +128,42 @@ struct SettingsView: View {
 
     private func section<Content: View>(_ title: String, @ViewBuilder _ content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 14) {
-            Eyebrow(title)
-            Panel { VStack(alignment: .leading, spacing: 16) { content() } }
+            HStack(spacing: 10) {
+                SymbolTile(symbol: Self.symbol(title), tint: Self.tint(title), size: 24)
+                Text(title).font(Theme.display(17))
+            }
+            Panel { VStack(alignment: .leading, spacing: 18) { content() } }
+        }
+    }
+
+    private static func symbol(_ section: String) -> String {
+        switch section {
+        case "Turning on and off": return "power"
+        case "Trial mode": return "flask"
+        case "Feel": return "hand.point.up.left"
+        case "Accuracy and latency": return "gauge.with.dots.needle.67percent"
+        case "Anthropic API key": return "key"
+        case "Permissions": return "lock.shield"
+        case "Galaxy": return "circle.hexagongrid"
+        default: return "circle"
+        }
+    }
+
+    private static func tint(_ section: String) -> Color {
+        switch section {
+        case "Turning on and off", "Accuracy and latency": return Theme.teal
+        case "Trial mode", "Galaxy": return Theme.violet
+        default: return Theme.rose
         }
     }
 
     private func row<Control: View>(_ title: String, _ detail: String, @ViewBuilder _ control: () -> Control) -> some View {
         HStack(alignment: .center, spacing: 16) {
             VStack(alignment: .leading, spacing: 3) {
-                Text(title).font(.system(size: 13.5, weight: .semibold, design: .rounded))
-                Text(detail).font(Theme.body(12)).foregroundStyle(Theme.ink3).fixedSize(horizontal: false, vertical: true)
+                Text(title).font(Theme.label(13.5))
+                Text(detail).font(Theme.body(12)).foregroundStyle(Theme.ink2.opacity(0.85)).lineSpacing(1.5)
+                    .frame(maxWidth: 520, alignment: .leading)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             Spacer()
             control()
@@ -145,7 +173,7 @@ struct SettingsView: View {
     private func permission(_ name: String, _ granted: Bool, _ detail: String, open: @escaping () -> Void) -> some View {
         row(name, detail) {
             if granted {
-                Text("Granted").font(Theme.mono(11)).foregroundStyle(Theme.contact)
+                Pill(text: "Granted", color: Theme.contact)
             } else {
                 Button("Open Settings", action: open).buttonStyle(NebulaButtonStyle())
             }
