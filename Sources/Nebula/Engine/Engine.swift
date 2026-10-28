@@ -155,7 +155,7 @@ final class Engine: ObservableObject {
         arming = .armed(since: Date())
         setActions(true)
         pipeline.start()
-        hud.show("Nebula on", symbol: "hand.raised")
+        hud.show(settings.trial ? "Nebula on (trial: gestures not yet proven)" : "Nebula on", symbol: "hand.raised")
     }
 
     func armForApproval() {
@@ -294,7 +294,21 @@ final class Engine: ObservableObject {
 
     /// What may act: gestures the newest report on the model in use passed (or the build's gate,
     /// before any report), minus what you've switched off.
+    /// What may act: proven gestures, plus, in trial mode, every gesture.
     var proven: Set<String> {
+        var set = strictlyProven
+        if settings.trial {
+            for g in Gesture.allCases { set.insert(g.rawValue) }
+            for c in customs { set.insert(c.id) }
+        }
+        return set
+    }
+
+    /// Acting only because trial mode is on: not proven by a report.
+    func isTrialOnly(_ key: String) -> Bool { settings.trial && !strictlyProven.contains(key) }
+
+    /// What the report (or the build's gate) proved on the model in use.
+    var strictlyProven: Set<String> {
         var set: Set<String>
         // Proof is for one exact model: change the model (calibration, a custom gesture) and the
         // report has to be run again before anything acts.

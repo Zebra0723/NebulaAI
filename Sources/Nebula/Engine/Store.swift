@@ -96,8 +96,25 @@ struct NebulaSettings: Codable, Equatable {
     var disabled: Set<String> = []
     /// 640×480 by default; 1280×720 to compare.
     var highResolution = false
+    /// Trial mode: gestures act before the report has proven them. Off by default; you choose it.
+    var trial = false
 
     private static let key = "NebulaSettings"
+
+    init() {}
+
+    /// Reads settings saved by any earlier version: a missing key keeps its default.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let d = NebulaSettings()
+        autoOffMinutes = try c.decodeIfPresent(Double.self, forKey: .autoOffMinutes) ?? d.autoOffMinutes
+        approvalMode = try c.decodeIfPresent(Bool.self, forKey: .approvalMode) ?? d.approvalMode
+        careful = try c.decodeIfPresent(Bool.self, forKey: .careful) ?? d.careful
+        naturalScroll = try c.decodeIfPresent(Bool.self, forKey: .naturalScroll) ?? d.naturalScroll
+        disabled = try c.decodeIfPresent(Set<String>.self, forKey: .disabled) ?? d.disabled
+        highResolution = try c.decodeIfPresent(Bool.self, forKey: .highResolution) ?? d.highResolution
+        trial = try c.decodeIfPresent(Bool.self, forKey: .trial) ?? d.trial
+    }
 
     static func load() -> NebulaSettings {
         guard let data = UserDefaults.standard.data(forKey: key),

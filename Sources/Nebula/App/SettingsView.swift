@@ -31,6 +31,11 @@ struct SettingsView: View {
                     }))
                 }
             }
+            section("Trial mode") {
+                row("Let unproven gestures act", "For trying Nebula before the full recording plan. Gestures act without having met the 99% target on your recordings, so expect some misses and false fires. The HUD says \"trial\" while it's on.") {
+                    NebulaToggle(isOn: $engine.settings.trial)
+                }
+            }
             section("Feel") {
                 row("Sensitivity", "Careful adds a tenth of a second to every hold. Standard uses the holds the tuning proved.") {
                     Picker("", selection: $engine.settings.careful) {

@@ -4,7 +4,7 @@ import SwiftUI
 struct PracticeView: View {
     @ObservedObject var engine: Engine
     @ObservedObject var recorder: Recorder
-    @State private var plan: Recorder.Plan = .gestures
+    @State private var plan: Recorder.Plan = .quickStart
     @State private var conditions = Recorder.Conditions()
 
     var body: some View {
@@ -141,7 +141,7 @@ struct PracticeView: View {
             .disabled(recorder.running)
             Text(planHelp).font(Theme.body(12)).foregroundStyle(Theme.ink3).fixedSize(horizontal: false, vertical: true)
 
-            if plan != .enrollment {
+            if plan != .enrollment && plan != .quickStart {
                 field("Light") {
                     Picker("", selection: $conditions.lighting) {
                         ForEach(["daylight", "lamp at night", "backlit", "overhead"], id: \.self) { Text($0).tag($0) }
@@ -192,6 +192,7 @@ struct PracticeView: View {
 
     private var planHelp: String {
         switch plan {
+        case .quickStart: return "8 of each gesture, then 3 minutes of using your Mac normally. Nebula then fits itself to your hands and turns on trial mode, so gestures act before they're proven."
         case .gestures: return "Prompts each gesture in turn: get ready, then do it during \"Now\", then rest."
         case .nothing: return "Just use your Mac. Everything recorded counts as \"nothing\": Nebula must never fire on it."
         case .nearMiss: return "Poses that look almost like a gesture. Nebula must not fire on these either."

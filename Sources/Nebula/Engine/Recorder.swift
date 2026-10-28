@@ -8,10 +8,11 @@ import NebulaCore
 @MainActor
 final class Recorder: ObservableObject {
     enum Plan: String, CaseIterable, Identifiable {
-        case gestures, nothing, nearMiss, enrollment
+        case quickStart, gestures, nothing, nearMiss, enrollment
         var id: String { rawValue }
         var title: String {
             switch self {
+            case .quickStart: return "Quick start (10 min)"
             case .gestures: return "Gesture session"
             case .nothing: return "Ordinary use (\"nothing\")"
             case .nearMiss: return "Near-misses"
@@ -72,7 +73,52 @@ final class Recorder: ObservableObject {
     /// Seconds on the clock frames are stamped with (the Mac's host clock).
     private static func clock() -> Double { Monotonic.seconds() }
 
+    /// Quick start: 8 of each gesture, then 3 minutes of ordinary use, then Nebula fits itself to
+    /// your hands and turns trial mode on. Enough to try every gesture; not enough to prove them.
+    private func runQuickStart(_ c: Conditions) {
+        guard !running, let engine else { return }
+        guard open(kind: .enrollment, folder: Paths.enrollment, id: "quickstart-gestures-\(Int(Date().timeIntervalSince1970))", c) else { return }
+        running = true
+        task = Task { [weak self] in
+            guard let self else { return }
+            await self.runGestures(reps: 8)
+            guard !Task.isCancelled else { return }
+            self.closeWriter()
+            guard self.open(kind: .nothing, folder: Paths.recordings, id: "quickstart-nothing-\(Int(Date().timeIntervalSince1970))", c) else { return }
+            await self.runNothing(minutes: 3)
+            self.stop(saved: !Task.isCancelled)
+            if !Task.isCancelled {
+                engine.settings.trial = true
+                engine.personalize()
+            }
+        }
+    }
+
+    private func open(kind: SessionInfo.Kind, folder: URL, id: String, _ c: Conditions) -> Bool {
+        guard let engine else { return false }
+        let info = SessionInfo(id: id, kind: kind, lighting: c.lighting, distanceCm: c.distanceCm, hands: c.hand,
+                               notes: engine.pipeline.resolution, fps: engine.pipeline.targetFPS)
+        guard let writer = try? RecordingWriter(url: folder.appendingPathComponent(id + ".jsonl"), info: info) else { return false }
+        self.writer = writer
+        if engine.arming == .off { engine.startPractice() }
+        let pipeline = engine.pipeline
+        pipeline.visionQueue.async { pipeline.recorder = writer }
+        return true
+    }
+
+    private func closeWriter() {
+        guard let engine, let writer else { return }
+        let pipeline = engine.pipeline
+        pipeline.visionQueue.async {
+            pipeline.recorder = nil
+            writer.close()
+        }
+        self.writer = nil
+        savedSessions += 1
+    }
+
     func start(_ plan: Plan, _ c: Conditions) {
+        if plan == .quickStart { return runQuickStart(c) }
         guard !running, let engine else { return }
         let id = "\(plan.rawValue)-\(Int(Date().timeIntervalSince1970))"
         let kind: SessionInfo.Kind = plan == .gestures ? .gestures : plan == .nothing ? .nothing : plan == .nearMiss ? .nearMiss : .enrollment
@@ -92,6 +138,7 @@ final class Recorder: ObservableObject {
             case .enrollment: await self.runGestures(reps: 10)
             case .nearMiss: await self.runNearMisses(reps: c.reps)
             case .nothing: await self.runNothing(minutes: c.minutes)
+            case .quickStart: break
             }
             self.stop(saved: !Task.isCancelled)
             if plan == .enrollment && !Task.isCancelled { self.engine?.personalize() }

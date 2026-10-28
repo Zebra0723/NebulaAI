@@ -8,11 +8,11 @@ struct GesturesView: View {
         Page {
             PageTitle(eyebrow: "Gestures", title: "What your hands can do",
                       subtitle: "A gesture acts only once its numbers meet every target on your own recordings. Window gestures act on the window in front, and only that window.")
-            if engine.gate.mode == "recorder" && engine.report == nil {
+            if engine.gate.mode == "recorder" && engine.report == nil && !engine.settings.trial {
                 Panel {
                     VStack(alignment: .leading, spacing: 6) {
                         Text("Recording build").font(Theme.display(16))
-                        Text("No gesture acts yet: there are no recordings to prove them on. Record sessions in Practice, then run the report in Settings.")
+                        Text("No gesture acts yet: there are no recordings to prove them on. For a quick try, run Quick start in Practice (10 minutes). To prove them, follow the full recording plan.")
                             .font(Theme.body(13)).foregroundStyle(Theme.ink2)
                     }
                 }
@@ -88,6 +88,7 @@ private struct GestureRow: View {
     }
 
     private var status: String {
+        if engine.isTrialOnly(key) { return "Trial: not proven yet" }
         if let customNote { return customNote }
         if let s = score, s.examples > 0 {
             return String(format: "%.1f%% recall · %.1f%% precision\n%d test examples", s.recall * 100, s.precision * 100, s.examples)
