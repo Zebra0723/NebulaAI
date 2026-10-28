@@ -67,8 +67,7 @@ struct SettingsView: View {
                     NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Camera")!)
                 }
                 permission("Accessibility", accessibility, "For keystrokes and scrolls to the window in front, and reading which window that is.") {
-                    Permissions.requestAccessibilityIfNeeded()
-                    NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!)
+                    Permissions.openAccessibilitySettings()
                 }
                 Text("Automation (Safari, Chrome, Arc, Keynote, Spotify, Music) is asked for app by app, the first time each comes to the front.")
                     .font(Theme.body(12)).foregroundStyle(Theme.ink3)

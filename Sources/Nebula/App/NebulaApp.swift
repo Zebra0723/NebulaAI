@@ -86,6 +86,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             waiting.isEnabled = false
             menu.addItem(waiting)
         }
+        if !Permissions.hasAccessibility {
+            menu.addItem(item("Grant Accessibility…", #selector(grantAccessibility), nil))
+        }
         menu.addItem(item("That Was Wrong (save the last 3 s)", #selector(wrong), nil))
         menu.addItem(.separator())
         menu.addItem(item("Gestures", #selector(openGestures), nil))
@@ -104,6 +107,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc private func toggle() { engine.toggleArmed() }
     @objc private func wrong() { engine.reportWrongFire() }
+    @objc private func grantAccessibility() { Permissions.openAccessibilitySettings() }
     @objc private func openGestures() { window.show(.gestures) }
     @objc private func openPractice() { window.show(.practice) }
     @objc private func openSettings() { window.show(.settings) }
@@ -185,6 +189,13 @@ enum Permissions {
         guard !hasAccessibility else { return }
         let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
         AXIsProcessTrustedWithOptions(options)
+    }
+
+    /// Adds Nebula to the Accessibility list (macOS only lists an app once it has asked)
+    /// and opens that list.
+    static func openAccessibilitySettings() {
+        requestAccessibilityIfNeeded()
+        NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!)
     }
 
     static var firstRun: Bool {

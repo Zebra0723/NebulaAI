@@ -142,6 +142,8 @@ final class Pipeline: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate, @u
     private(set) var configured = false
 
     func start() {
+        // Auto-off counts from turning on, not from when the app launched.
+        lastHandSeen = Date()
         sessionQueue.async { if !self.session.isRunning { self.session.startRunning() } }
         visionQueue.async { self.recognizer.reset() }
     }

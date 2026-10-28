@@ -185,6 +185,8 @@ final class Engine: ObservableObject {
         guard arming != .off else { return }
         turnOff()
         note(reason)
+        // Never turn off silently: say why.
+        hud.show("Nebula off: \(reason)", symbol: "hand.raised.slash")
     }
 
     private func turnOff() {

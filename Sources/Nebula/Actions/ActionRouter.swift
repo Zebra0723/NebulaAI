@@ -108,7 +108,6 @@ final class ActionRouter: @unchecked Sendable {
             }
         case .wave:
             record(arrival)
-            hud.show("Nebula off", symbol: "hand.wave")
             disarm("You waved")
         }
     }
