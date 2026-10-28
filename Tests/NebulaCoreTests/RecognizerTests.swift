@@ -218,4 +218,24 @@ final class RecognizerTests: XCTestCase {
         events += TestKit.run(r, from: 1.0, seconds: 0.6) { _ in [TestKit.hand(.scroll)] }
         XCTAssertEqual(TestKit.fires(events).map(\.1), [Gesture.peace.index, Gesture.scroll.index])
     }
+
+    func testTrialModeStillWorksWithTheHandAtFaceHeight() {
+        // Almost any hand beside the face also passes the ear rule; that must not block the others.
+        let faceHeight: (Float, Float) = (0.67, 0.62)
+        for (i, (kind, gesture)) in [(ShapeKind.thumbsUp, Gesture.thumbsUp), (.thumbsDown, .thumbsDown),
+                                     (.scroll, .scroll), (.flat, .openPalm)].enumerated() {
+            let trial = Recognizer(model: Bootstrap.emptyModel(), lenient: true)
+            let events = TestKit.run(trial, from: 0, seconds: 1) { _ in [TestKit.hand(kind, at: faceHeight, seed: UInt64(i + 1))] }
+            XCTAssertEqual(TestKit.fires(events).map(\.1), [gesture.index], "\(kind)")
+        }
+    }
+
+    func testTrialModeIgnoresOrdinaryHandsByTheFace() {
+        let trial = Recognizer(model: Bootstrap.emptyModel(), lenient: true)
+        var events: [(Double, RecognizerEvent)] = []
+        for (i, kind) in [ShapeKind.relaxed, .scratch, .fist, .claw, .phone].enumerated() {
+            events += TestKit.run(trial, from: Double(i), seconds: 1) { _ in [TestKit.hand(kind, at: (0.67, 0.62), seed: UInt64(i + 3))] }
+        }
+        XCTAssertTrue(TestKit.fires(events).isEmpty, "\(TestKit.fires(events))")
+    }
 }

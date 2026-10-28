@@ -81,6 +81,11 @@ public struct CustomGesture: Codable, Sendable, Equatable {
 }
 
 public final class Recognizer {
+    /// Poses whose rules say little about the hand's shape: Judge A alone can't name them.
+    @inline(__always) static func isVague(_ pose: Int) -> Bool {
+        pose == Pose.pinch.rawValue || pose == Pose.ear.rawValue
+    }
+
     public static let customBase = 100
     public static let maxEvents = 8
 
@@ -432,16 +437,23 @@ public final class Recognizer {
                 agreed = b.top
             }
         }
-        // Not the knob: a plain fist passes Judge A's pinch rule, so the knob always needs both judges.
-        if lenient && agreed == 0 && aBest > 0 && aBest != Pose.pinch.rawValue && poseToHeld[aBest] >= 0
+        // Not the knob or the ear: their rules say little about the hand's shape (a plain fist passes
+        // pinch, and almost any hand at face height passes ear), so they always need both judges.
+        if lenient && agreed == 0 && aBest > 0 && !Recognizer.isVague(aBest) && poseToHeld[aBest] >= 0
             && (b.top == 0 || b.top == aBest) {
             // Judge A alone, only when it is all but certain and B doesn't name another pose.
             let h = poseToHeld[aBest]
             let inPose = h == holdIndex || h == engagedIndex
-            // Only if no other gesture's pose matches too: two at once is a question for Judge B.
+            // If another shape rule matches too (peace and scroll can), that's a question for Judge B,
+            // unless B already leans this way. The vague rules match alongside everything, so they
+            // don't count.
             var rival: Float = 0
-            for p in 1..<poseCount where p != aBest && poseToHeld[p] >= 0 && aScores[p] > rival { rival = aScores[p] }
-            if aBestScore >= (inPose ? held[h].tuning.stay : 0.95) && (inPose || rival < 0.75) { agreed = aBest }
+            for p in 1..<poseCount where p != aBest && poseToHeld[p] >= 0 && !Recognizer.isVague(p) && aScores[p] > rival {
+                rival = aScores[p]
+            }
+            if aBestScore >= (inPose ? held[h].tuning.stay : 0.95) && (inPose || b.top == aBest || rival < 0.75) {
+                agreed = aBest
+            }
         }
         status.agreed = agreed
 
