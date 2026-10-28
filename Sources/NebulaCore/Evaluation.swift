@@ -80,8 +80,9 @@ public enum Evaluator {
     }
 
     /// Runs one session through a fresh recognizer, returning fires and per-frame timings.
-    static func fires(_ rec: Recording, model: NebulaModel, customs: [CustomGesture], timings: inout [Float]) -> [Fire] {
-        let r = Recognizer(model: model, customs: customs)
+    static func fires(_ rec: Recording, model: NebulaModel, customs: [CustomGesture], lenient: Bool = false,
+                      timings: inout [Float]) -> [Fire] {
+        let r = Recognizer(model: model, customs: customs, lenient: lenient)
         var out: [Fire] = []
         var engagedFire = -1
         for frame in rec.frames {
@@ -123,12 +124,14 @@ public enum Evaluator {
         }
     }
 
-    public static func evaluate(_ recordings: [Recording], model: NebulaModel, customs: [CustomGesture] = []) -> EvaluationResult {
+    /// `lenient`: as in trial mode, for seeing what would fire on the Mac today. Reports use strict.
+    public static func evaluate(_ recordings: [Recording], model: NebulaModel, customs: [CustomGesture] = [],
+                                lenient: Bool = false) -> EvaluationResult {
         var result = EvaluationResult()
         var timings: [Float] = []
         var timeSums: [String: Double] = [:]
         for rec in recordings {
-            let fires = Self.fires(rec, model: model, customs: customs, timings: &timings)
+            let fires = Self.fires(rec, model: model, customs: customs, lenient: lenient, timings: &timings)
             score(rec, fires: fires, customs: customs, into: &result, timeSums: &timeSums)
         }
         for (k, v) in timeSums where (result.scores[k]?.recognized ?? 0) > 0 {

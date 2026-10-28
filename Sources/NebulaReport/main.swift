@@ -188,6 +188,20 @@ case "diagnose":
         if !worst.isEmpty { print("   outside range: " + worst.map { "\($0.key) (\($0.value))" }.joined(separator: ", ")) }
         if let rj = rejections[name] { print("   unusable frames: " + rj.map { "\($0.key) \($0.value)" }.joined(separator: ", ")) }
     }
+    // What counts: replayed through the whole recognizer as the app runs it (trial mode),
+    // did each gesture you made actually fire, and did anything fire that shouldn't have?
+    let result = Evaluator.evaluate(recs, model: model, lenient: true)
+    print("\nWould fire, in trial mode:")
+    for (name, s) in result.scores.sorted(by: { $0.key < $1.key }) where s.examples > 0 {
+        print("   \(name): \(s.recognized) of \(s.examples)" + (s.examples > s.recognized ? "" : "  ✓")
+              + (s.meanTimeToFire > 0 ? String(format: "  (%.2f s after you start)", s.meanTimeToFire) : ""))
+    }
+    let wrong = result.confusion.flatMap { exp, fired in fired.filter { $0.key != exp && $0.key != "none" }.map { "\(exp) → \($0.key) \($0.value)" } }
+    if !wrong.isEmpty { print("   mixed up: " + wrong.sorted().joined(separator: ", ")) }
+    var falseBy: [String: Int] = [:]
+    for f in result.falseFires { falseBy["\(f.gesture) during \(f.context)", default: 0] += 1 }
+    print("   false fires: \(result.falseFires.count)" + (falseBy.isEmpty ? "" : " — "
+          + falseBy.sorted { $0.value > $1.value }.prefix(8).map { "\($0.key) \($0.value)" }.joined(separator: ", ")))
 
 case "trace":
     // Frame by frame through the windows of one gesture: what each judge saw and what fired.

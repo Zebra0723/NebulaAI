@@ -54,7 +54,7 @@ public struct PoseRule: Codable, Sendable, Equatable {
 /// where personal calibration is allowed to move them.
 public enum BuiltinRules {
     /// Bumped whenever these rules change, so personal calibration built on older ones is redone.
-    public static let version = 4
+    public static let version = 5
 
     // Reach: about 1 for an extended finger, 0 or below for a curled one.
     static let extended: Float = 0.75
@@ -64,7 +64,9 @@ public enum BuiltinRules {
     private static func down(_ f: Feature) -> Condition { Condition(f, max: curled, band: 0.15) }
 
     public static let flat = PoseRule(name: "flat", conditions: [
-        up(.reachIndex), up(.reachMiddle), up(.reachRing), Condition(.reachLittle, min: 0.65, band: 0.15),
+        // Real palms held to a laptop camera reach 0.65–0.75: fingers a little back, or slightly bent.
+        Condition(.reachIndex, min: 0.65, band: 0.12), Condition(.reachMiddle, min: 0.65, band: 0.12),
+        Condition(.reachRing, min: 0.62, band: 0.12), Condition(.reachLittle, min: 0.52, band: 0.15),
         Condition(.straightThumb, min: 0.7, band: 0.12),
         Condition(.spreadIndexMiddle, max: 0.24, band: 0.07),
         Condition(.spreadMiddleRing, max: 0.24, band: 0.07),
@@ -76,9 +78,9 @@ public enum BuiltinRules {
     /// An open hand in motion (swipes, waves): fingers out but not necessarily straight, and the
     /// palm free to turn a little. Recordings showed moving fingers reaching 0.6–0.75.
     public static let open = PoseRule(name: "open", conditions: [
-        Condition(.reachIndex, min: 0.58, band: 0.15), Condition(.reachMiddle, min: 0.58, band: 0.15),
-        Condition(.reachRing, min: 0.55, band: 0.15), Condition(.reachLittle, min: 0.45, band: 0.15),
-        Condition(.palmFacing, min: -0.15, band: 0.2),
+        Condition(.reachIndex, min: 0.45, band: 0.15), Condition(.reachMiddle, min: 0.45, band: 0.15),
+        Condition(.reachRing, min: 0.42, band: 0.15), Condition(.reachLittle, min: 0.32, band: 0.15),
+        Condition(.palmFacing, min: -0.3, band: 0.2),
         Condition(.palmAxisY, min: 0.2, band: 0.2),
     ])
 
@@ -113,8 +115,10 @@ public enum BuiltinRules {
     /// So: both fingers straight (little bend, however foreshortened), the other two curled.
     /// Telling it from a peace sign is Judge B's job; it learns the difference from your hands.
     public static let scroll = PoseRule(name: "scroll", conditions: [
-        Condition(.curlIndex, max: 0.42, band: 0.15), Condition(.curlMiddle, max: 0.42, band: 0.15),
-        Condition(.reachIndex, min: 0.1, band: 0.15), Condition(.reachMiddle, min: 0.1, band: 0.15),
+        // Real scroll fingers bend up to about 0.5 (a thumbs fist is 0.55 and more), and pointed at
+        // the screen they can reach as little as -0.1 in the image.
+        Condition(.curlIndex, max: 0.5, band: 0.12), Condition(.curlMiddle, max: 0.5, band: 0.12),
+        Condition(.reachIndex, min: -0.1, band: 0.15), Condition(.reachMiddle, min: -0.1, band: 0.15),
         down(.reachRing), down(.reachLittle),
         Condition(.spreadIndexMiddle, max: 0.55, band: 0.1),
         Condition(.palmFacing, min: -0.1, band: 0.2),
@@ -132,12 +136,12 @@ public enum BuiltinRules {
         Condition(.earDistance, max: 0.9, band: 0.2),
         Condition(.faceDY, min: -0.8, max: 0.9, band: 0.2),
         // Cupped: curled anywhere from loosely to well round, but not flat.
-        Condition(.openness, min: 0.05, max: 0.9, band: 0.1),
+        Condition(.openness, min: -0.15, max: 0.9, band: 0.1),
     ])
 
     public static let pinch = PoseRule(name: "pinch", conditions: [
         // Fingertips a small knob's width apart (2–3 cm), or touching.
-        Condition(.thumbToIndex, max: 0.6, band: 0.15),
+        Condition(.thumbToIndex, max: 0.75, band: 0.15),
         Condition(.reachIndex, max: 0.85, band: 0.1),
         // Holding a knob, the other fingers curl too (unlike an OK sign).
         Condition(.reachMiddle, max: 0.65, band: 0.12),

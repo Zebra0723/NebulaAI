@@ -238,4 +238,13 @@ final class RecognizerTests: XCTestCase {
         }
         XCTAssertTrue(TestKit.fires(events).isEmpty, "\(TestKit.fires(events))")
     }
+
+    func testAHoldSurvivesAShortGapWhereTheHandIsLost() {
+        // Vision drops a hand for a few frames near the face; the gesture must still fire.
+        let r = Recognizer(model: TestKit.model)
+        var events = TestKit.run(r, from: 0, seconds: 0.08) { _ in [TestKit.hand(.thumbsUp)] }
+        events += TestKit.run(r, from: 0.08, seconds: 0.07) { _ in [] } // 4 frames lost
+        events += TestKit.run(r, from: 0.15, seconds: 0.4) { _ in [TestKit.hand(.thumbsUp)] }
+        XCTAssertEqual(TestKit.fires(events).map(\.1), [Gesture.thumbsUp.index])
+    }
 }

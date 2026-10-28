@@ -562,11 +562,11 @@ public final class Recognizer {
             releaseCount[h] += 1
             if releaseCount[h] >= m.releaseFrames { needsRelease[h] = false }
         }
-        if missingFrames >= m.lostFrames {
-            if holdIndex >= 0 { cancelHold() }
-            if engagedIndex >= 0 { endEngagement() }
-        } else if engagedIndex >= 0 {
-            engagedMisses += 1
+        // Vision often loses a hand for a few frames near the face or mid-turn. A hold or a scroll
+        // survives a short gap (the frames missed count neither for nor against it); a longer one ends it.
+        if holdIndex >= 0 && missingFrames >= m.lostFrames * 2 { cancelHold() }
+        if engagedIndex >= 0 {
+            if missingFrames >= m.lostFrames * 3 { endEngagement() } else { engagedMisses += 1 }
         }
         finishStatus()
     }
