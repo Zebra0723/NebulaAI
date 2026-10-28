@@ -26,8 +26,8 @@ final class ActionRouter: @unchecked Sendable {
     /// Where the scroll area was when scrolling began, read off the hot path.
     private let probeLock = NSLock()
     private var probeStart: Double?
-    /// Set when scrolls sent straight to the app didn't move it: deliver at the point instead.
-    private var scrollAtPoint = false
+    /// Set when wheel events at the window's point didn't move it: send them to the app directly instead.
+    private var scrollDirect = false
     private var knobEngaged = false
 
     init(hud: HUD) {
@@ -175,21 +175,20 @@ final class ActionRouter: @unchecked Sendable {
         }
         probeLock.locked {
             probeStart = nil
-            scrollAtPoint = false
+            scrollDirect = false
         }
         let where_ = CGPoint(x: point.x, y: point.y)
         DispatchQueue.global(qos: .utility).async { [weak self] in
             let start = ScrollProbe.position(at: where_)
             self?.probeLock.locked { self?.probeStart = start }
         }
-        // Half a second in: if the window hasn't moved, this app ignores scrolls sent to it
-        // directly, so deliver them at the point inside its window instead.
+        // Half a second in: if the window provably hasn't moved, try sending to the app directly.
         DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 0.5) { [weak self] in
             guard let self else { return }
             let start = self.probeLock.locked { self.probeStart }
             guard let start, let now = ScrollProbe.position(at: where_), abs(now - start) < 0.0005 else { return }
-            self.probeLock.locked { self.scrollAtPoint = true }
-            ActionLog.write("scroll → \(target.bundleID) ignored direct scrolls; delivering at the window's point")
+            self.probeLock.locked { self.scrollDirect = true }
+            ActionLog.write("scroll → \(target.bundleID) didn't move from wheel events; sending to the app directly")
         }
         record(arrival)
         hud.show("Scrolling · \(target.appName)", symbol: "arrow.up.and.down")
@@ -206,7 +205,7 @@ final class ActionRouter: @unchecked Sendable {
         guard whole != 0, TargetTracker.shared.stillFrontmost(s.target.pid) else { return }
         let point = TargetPolicy.scrollPoint(s.target)
         KeyEvents.scroll(pixels: Int32(clamping: Int(whole)), at: CGPoint(x: point.x, y: point.y), toPID: s.target.pid,
-                         direct: probeLock.locked { !scrollAtPoint })
+                         direct: probeLock.locked { scrollDirect })
         record(arrival)
     }
 

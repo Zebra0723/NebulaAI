@@ -65,16 +65,14 @@ enum KeyEvents {
     }
 
     /// A pixel scroll for one app's window. `point` is in global top-left coordinates, inside
-    /// that window. Plain continuous scroll events, with no trackpad gesture phases: apps
-    /// silently ignore synthetic scrolls whose phases don't form a real trackpad sequence.
+    /// that window. A plain mouse-wheel event, no trackpad phases and not "continuous": that is
+    /// the one form every app accepts from a synthetic source.
     ///
-    /// `direct`: posted to the app's pid only. Otherwise posted at `point`, where the window
-    /// server delivers it to the window there (the target window, since it is frontmost);
-    /// some apps only take scrolls that way.
+    /// Posted at the HID level by default, where the window server delivers it like a real
+    /// wheel. `direct` posts it to the app's pid only, for an app that ignores the other way.
     static func scroll(pixels: Int32, at point: CGPoint, toPID pid: pid_t, direct: Bool) {
         guard let e = CGEvent(scrollWheelEvent2Source: source, units: .pixel, wheelCount: 1, wheel1: pixels, wheel2: 0, wheel3: 0) else { return }
         e.location = point
-        e.setIntegerValueField(.scrollWheelEventIsContinuous, value: 1)
         e.setIntegerValueField(.eventSourceUserData, value: tag)
         if direct { e.postToPid(pid) } else { e.post(tap: .cghidEventTap) }
     }

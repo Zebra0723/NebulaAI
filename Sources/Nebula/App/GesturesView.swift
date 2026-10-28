@@ -73,7 +73,7 @@ struct GesturesView: View {
         .animation(.easeOut(duration: 0.25), value: on)
     }
 
-    private func group(_ title: String, gestures: [Gesture]) -> some View {
+    private func group(_ title: String, gestures: [NebulaCore.Gesture]) -> some View {
         VStack(alignment: .leading, spacing: 14) {
             Eyebrow(title)
             LazyVGrid(columns: columns, alignment: .leading, spacing: 14) {
@@ -88,7 +88,7 @@ struct GesturesView: View {
     }
 }
 
-extension Gesture {
+extension NebulaCore.Gesture {
     /// What the gesture does, as a symbol: the action is what you remember.
     var symbol: String {
         switch self {
