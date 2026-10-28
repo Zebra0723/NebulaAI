@@ -33,16 +33,35 @@ enum KeyEvents {
 
     /// A key press the whole system sees. Only for summoning Nova, whose ⌃Space is a
     /// system-wide hotkey that no single app receives.
+    ///
+    /// It types the shortcut the way hands do: each modifier pressed, the key pressed and
+    /// released, the modifiers released. Hotkey systems can ignore a lone key that merely
+    /// carries modifier flags.
     static func pressGlobally(_ combo: KeyCombo) {
-        guard let down = CGEvent(keyboardEventSource: source, virtualKey: combo.keyCode, keyDown: true),
-              let up = CGEvent(keyboardEventSource: source, virtualKey: combo.keyCode, keyDown: false) else { return }
-        let f = flags(combo)
-        down.flags = f
-        up.flags = f
-        down.setIntegerValueField(.eventSourceUserData, value: tag)
-        up.setIntegerValueField(.eventSourceUserData, value: tag)
-        down.post(tap: .cghidEventTap)
-        up.post(tap: .cghidEventTap)
+        var modifiers: [(CGKeyCode, CGEventFlags)] = []
+        if combo.control { modifiers.append((59, .maskControl)) }
+        if combo.option { modifiers.append((58, .maskAlternate)) }
+        if combo.shift { modifiers.append((56, .maskShift)) }
+        if combo.command { modifiers.append((55, .maskCommand)) }
+
+        func post(_ key: CGKeyCode, down: Bool, flags: CGEventFlags) {
+            guard let e = CGEvent(keyboardEventSource: source, virtualKey: key, keyDown: down) else { return }
+            e.flags = flags
+            e.setIntegerValueField(.eventSourceUserData, value: tag)
+            e.post(tap: .cghidEventTap)
+        }
+
+        var held: CGEventFlags = []
+        for (key, flag) in modifiers {
+            held.insert(flag)
+            post(key, down: true, flags: held)
+        }
+        post(combo.keyCode, down: true, flags: held)
+        post(combo.keyCode, down: false, flags: held)
+        for (key, flag) in modifiers.reversed() {
+            held.remove(flag)
+            post(key, down: false, flags: held)
+        }
     }
 
     /// A pixel scroll for one app, positioned inside its window so it scrolls that window

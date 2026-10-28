@@ -209,14 +209,33 @@ final class ActionRouter: @unchecked Sendable {
     // MARK: - Galaxy and custom
 
     private func summonNova(arrival: UInt64) {
-        guard !NSRunningApplication.runningApplications(withBundleIdentifier: "ai.galaxy.nova").isEmpty else {
+        guard let nova = NSRunningApplication.runningApplications(withBundleIdentifier: "ai.galaxy.nova").first else {
             hud.show("Nova isn't running", symbol: "sparkle", warn: true)
             return
         }
+        let before = Self.onScreenWindows(nova.processIdentifier)
         KeyEvents.pressGlobally(KeyCombo(keyCode: 49, control: true, key: "space"))
         record(arrival)
-        hud.show("Nova", symbol: "sparkle")
-        ActionLog.write("peace → Nova (⌃Space)")
+        // Check it worked: Nova's panel is a new on-screen window. If ⌃Space didn't reach it
+        // (another app or an input-source shortcut took it), open Nova directly instead.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [hud] in
+            if Self.onScreenWindows(nova.processIdentifier) > before {
+                hud.show("Nova", symbol: "sparkle")
+                ActionLog.write("peace → Nova (⌃Space)")
+            } else {
+                if let url = nova.bundleURL {
+                    NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration())
+                }
+                hud.show("Nova (⌃Space didn't reach it, so opened it)", symbol: "sparkle")
+                ActionLog.write("peace → ⌃Space had no effect; opened Nova directly")
+            }
+        }
+    }
+
+    /// How many of an app's windows are on screen right now.
+    private static func onScreenWindows(_ pid: pid_t) -> Int {
+        let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] ?? []
+        return list.filter { ($0[kCGWindowOwnerPID as String] as? Int32) == pid }.count
     }
 
     private func runCustom(_ custom: SavedCustomGesture, arrival: UInt64) {
