@@ -54,7 +54,7 @@ public struct PoseRule: Codable, Sendable, Equatable {
 /// where personal calibration is allowed to move them.
 public enum BuiltinRules {
     /// Bumped whenever these rules change, so personal calibration built on older ones is redone.
-    public static let version = 3
+    public static let version = 4
 
     // Reach: about 1 for an extended finger, 0 or below for a curled one.
     static let extended: Float = 0.75
@@ -82,19 +82,24 @@ public enum BuiltinRules {
         Condition(.palmAxisY, min: 0.2, band: 0.2),
     ])
 
+    /// Index and middle bent round, as in a fist. Reach alone can't tell a fist from two straight
+    /// fingers pointed at the camera (both look short in the image); bend can: straight fingers
+    /// stay straight however they point, so a scroll hand never reads as a thumb.
+    private static let fistCurl: [Condition] = [Condition(.curlIndex, min: 0.55, band: 0.2), Condition(.curlMiddle, min: 0.55, band: 0.2)]
+
     public static let thumbsUp = PoseRule(name: "thumbsUp", conditions: [
         Condition(.straightThumb, min: 0.8, band: 0.1),
         Condition(.extThumb, min: 0.42, band: 0.15),
         Condition(.thumbDirY, min: 0.65, band: 0.15),
         down(.reachIndex), down(.reachMiddle), down(.reachRing), down(.reachLittle),
-    ])
+    ] + fistCurl)
 
     public static let thumbsDown = PoseRule(name: "thumbsDown", conditions: [
         Condition(.straightThumb, min: 0.8, band: 0.1),
         Condition(.extThumb, min: 0.42, band: 0.15),
         Condition(.thumbDirY, max: -0.65, band: 0.15),
         down(.reachIndex), down(.reachMiddle), down(.reachRing), down(.reachLittle),
-    ])
+    ] + fistCurl)
 
     public static let peace = PoseRule(name: "peace", conditions: [
         up(.reachIndex), up(.reachMiddle), down(.reachRing), down(.reachLittle),

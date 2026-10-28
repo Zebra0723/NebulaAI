@@ -122,10 +122,29 @@ final class RuleTests: XCTestCase {
             XCTAssertLessThan(score(.scroll, TestKit.hand(.fistNoThumb, seed: s)), 0.1)
             XCTAssertLessThan(score(.peace, TestKit.hand(.scroll, seed: s)), 0.3, "scroll is not peace")
             XCTAssertLessThan(score(.thumbsDown, TestKit.hand(.thumbsUp, seed: s)), 0.3)
+            XCTAssertLessThan(score(.thumbsDown, TestKit.hand(.scroll, seed: s)), 0.1, "scroll is not a thumb")
+            XCTAssertLessThan(score(.thumbsUp, TestKit.hand(.scroll, seed: s)), 0.1)
             XCTAssertLessThan(score(.thumbsUp, TestKit.hand(.thumbsDown, seed: s)), 0.3)
             XCTAssertLessThan(score(.flat, TestKit.hand(.fist, seed: s)), 0.1)
             XCTAssertLessThan(score(.pinch, TestKit.hand(.ok, seed: s)), 0.5, "an OK sign is not a knob grip")
         }
+    }
+
+    func testScrollFingersPointedAtTheCameraAreNotAFist() {
+        // Fingers pointed at the camera look short, like curled ones: reach can't tell them apart.
+        var h = TestKit.hand(.scroll)
+        for (base, joints) in [(5, [6, 7, 8]), (9, [10, 11, 12])] {
+            for j in joints {
+                h.x[j] = h.x[base] + (h.x[j] - h.x[base]) * 0.25
+                h.y[j] = h.y[base] + (h.y[j] - h.y[base]) * 0.25
+            }
+        }
+        var f = FeatureVector()
+        FeatureExtractor.extract(h, frame: TestKit.frame(0, [h]), into: &f)
+        XCTAssertLessThan(f[Feature.reachIndex.rawValue], 0.5, "foreshortened: reach is fooled")
+        // But they're still straight, so the thumbs rules' fist check rejects them.
+        XCTAssertLessThan(f[Feature.curlIndex.rawValue], 0.35)
+        XCTAssertLessThan(f[Feature.curlMiddle.rawValue], 0.35)
     }
 
     func testFingerToLipsNeedsTheLips() {
