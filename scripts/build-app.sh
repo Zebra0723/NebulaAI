@@ -85,8 +85,13 @@ echo "Built $APP"
 
 if [[ $INSTALL -eq 1 ]]; then
     pkill -x Nebula 2>/dev/null || true
+    # Wait for the old copy to quit, or launching the new one races it (error -600).
+    for _ in {1..20}; do pgrep -x Nebula >/dev/null || break; sleep 0.25; done
     rm -rf /Applications/Nebula.app
     cp -R "$APP" /Applications/
-    open /Applications/Nebula.app
+    for attempt in 1 2 3; do
+        open /Applications/Nebula.app && break
+        sleep 1
+    done
     echo "Installed and launched /Applications/Nebula.app"
 fi
