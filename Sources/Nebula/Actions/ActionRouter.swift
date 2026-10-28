@@ -1,4 +1,5 @@
 import AppKit
+import ApplicationServices
 import NebulaCore
 
 /// Turns recognizer events into actions, on the vision queue, the moment they happen.
@@ -25,6 +26,8 @@ final class ActionRouter: @unchecked Sendable {
     /// Where the scroll area was when scrolling began, read off the hot path.
     private let probeLock = NSLock()
     private var probeStart: Double?
+    /// Set when scrolls sent straight to the app didn't move it: deliver at the point instead.
+    private var scrollAtPoint = false
     private var knobEngaged = false
 
     init(hud: HUD) {
@@ -165,12 +168,29 @@ final class ActionRouter: @unchecked Sendable {
         mapping.natural = settings.naturalScroll
         let point = TargetPolicy.scrollPoint(target)
         scroll = (target, mapping, 0, frameTime)
-        probeLock.locked { probeStart = nil }
+        guard AXIsProcessTrusted() else {
+            hud.show("Scrolling needs Accessibility: menu bar → Grant Accessibility", symbol: "exclamationmark.triangle", warn: true)
+            scroll = nil
+            return
+        }
+        probeLock.locked {
+            probeStart = nil
+            scrollAtPoint = false
+        }
+        let where_ = CGPoint(x: point.x, y: point.y)
         DispatchQueue.global(qos: .utility).async { [weak self] in
-            let start = ScrollProbe.position(at: CGPoint(x: point.x, y: point.y))
+            let start = ScrollProbe.position(at: where_)
             self?.probeLock.locked { self?.probeStart = start }
         }
-        KeyEvents.scroll(pixels: 0, at: CGPoint(x: point.x, y: point.y), toPID: target.pid, phase: 1) // began
+        // Half a second in: if the window hasn't moved, this app ignores scrolls sent to it
+        // directly, so deliver them at the point inside its window instead.
+        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 0.5) { [weak self] in
+            guard let self else { return }
+            let start = self.probeLock.locked { self.probeStart }
+            guard let start, let now = ScrollProbe.position(at: where_), abs(now - start) < 0.0005 else { return }
+            self.probeLock.locked { self.scrollAtPoint = true }
+            ActionLog.write("scroll → \(target.bundleID) ignored direct scrolls; delivering at the window's point")
+        }
         record(arrival)
         hud.show("Scrolling · \(target.appName)", symbol: "arrow.up.and.down")
     }
@@ -185,7 +205,8 @@ final class ActionRouter: @unchecked Sendable {
         scroll = s
         guard whole != 0, TargetTracker.shared.stillFrontmost(s.target.pid) else { return }
         let point = TargetPolicy.scrollPoint(s.target)
-        KeyEvents.scroll(pixels: Int32(clamping: Int(whole)), at: CGPoint(x: point.x, y: point.y), toPID: s.target.pid, phase: 2)
+        KeyEvents.scroll(pixels: Int32(clamping: Int(whole)), at: CGPoint(x: point.x, y: point.y), toPID: s.target.pid,
+                         direct: probeLock.locked { !scrollAtPoint })
         record(arrival)
     }
 
@@ -193,7 +214,6 @@ final class ActionRouter: @unchecked Sendable {
         guard let s = scroll else { return }
         scroll = nil
         let point = TargetPolicy.scrollPoint(s.target)
-        KeyEvents.scroll(pixels: 0, at: CGPoint(x: point.x, y: point.y), toPID: s.target.pid, phase: 4) // ended
         let start = probeLock.locked { probeStart }
         DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 0.2) { [hud] in
             let end = ScrollProbe.position(at: CGPoint(x: point.x, y: point.y))
