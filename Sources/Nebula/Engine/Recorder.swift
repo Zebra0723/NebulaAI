@@ -118,6 +118,8 @@ final class Recorder: ObservableObject {
     }
 
     func start(_ plan: Plan, _ c: Conditions) {
+        // Recording never acts on your windows: if gestures are on, switch them off first.
+        if let engine, engine.isArmed { engine.disarm("Recording") }
         if plan == .quickStart { return runQuickStart(c) }
         guard !running, let engine else { return }
         let id = "\(plan.rawValue)-\(Int(Date().timeIntervalSince1970))"
@@ -148,6 +150,7 @@ final class Recorder: ObservableObject {
     /// Records examples of a custom gesture being created: `reps` prompted windows labelled with its id.
     func startCustom(id: String, title: String, movement: String, reps: Int, done: @escaping () -> Void) {
         guard !running, let engine else { return }
+        if engine.isArmed { engine.disarm("Recording") }
         let sessionID = "custom-\(id)-\(Int(Date().timeIntervalSince1970))"
         let info = SessionInfo(id: sessionID, kind: .enrollment, notes: "custom:\(id)", fps: engine.pipeline.targetFPS)
         guard let writer = try? RecordingWriter(url: Paths.enrollment.appendingPathComponent(sessionID + ".jsonl"), info: info) else { return }

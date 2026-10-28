@@ -167,9 +167,8 @@ struct PracticeView: View {
                 if recorder.running { recorder.stop(saved: true) } else { recorder.start(plan, conditions) }
             }
             .buttonStyle(NebulaButtonStyle(kind: recorder.running ? .warn : .primary))
-            .disabled(engine.isArmed)
-            if engine.isArmed {
-                Text("Turn Nebula off to record: practice never acts on your windows.").font(Theme.body(11.5)).foregroundStyle(Theme.ink3)
+            if engine.isArmed && !recorder.running {
+                Text("Recording turns gestures off while it runs.").font(Theme.body(11.5)).foregroundStyle(Theme.ink3)
             }
             if recorder.savedSessions > 0 {
                 Text("\(recorder.savedSessions) session\(recorder.savedSessions == 1 ? "" : "s") saved this time.").font(Theme.mono(11)).foregroundStyle(Theme.ink2)

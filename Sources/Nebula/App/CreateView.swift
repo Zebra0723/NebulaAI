@@ -218,7 +218,7 @@ struct CreateView: View {
                 HStack(spacing: 10) {
                     Button("Record 12 examples") { model.record(engine) }
                         .buttonStyle(NebulaButtonStyle())
-                        .disabled(!(model.clash?.ok ?? false) || model.stage == .recording || model.stage == .verifying || engine.isArmed)
+                        .disabled(!(model.clash?.ok ?? false) || model.stage == .recording || model.stage == .verifying)
                     Button("Save") { model.save(engine) }
                         .buttonStyle(NebulaButtonStyle(kind: .primary))
                         .disabled(!(model.verification?.passes ?? false) || model.stage == .saved)
