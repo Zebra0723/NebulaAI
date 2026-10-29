@@ -23,7 +23,8 @@ var targets: [Target] = [
 targets.append(
     .executableTarget(
         name: "Nebula",
-        dependencies: ["NebulaCore"],
+        // NebulaSim too: Galaxy Trainer's workouts run simulated hands through the real recognizer.
+        dependencies: ["NebulaCore", "NebulaSim"],
         path: "Sources/Nebula",
         linkerSettings: [
             .linkedFramework("AppKit"),

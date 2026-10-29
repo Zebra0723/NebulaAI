@@ -11,6 +11,24 @@ public struct SynthOptions {
     public var aspect: Float = 4.0 / 3.0
     public var repetitions = 20
     public var nothingMinutes: Double = 5
+
+    // How sloppy the hand is, for Galaxy Trainer's workouts. The defaults are the tidy hand
+    // the corpus has always used, so nothing that was there before changes.
+    /// Multiplies the hand's tremor.
+    public var tremor: Float = 1
+    /// Movements play this many times faster (motion blur, a hurried hand) or slower.
+    public var speed: Double = 1
+    /// Extra wrist turn, in degrees of random roll.
+    public var wristTurn: Float = 0
+    /// How far every pose slumps toward a relaxed hand: a lazy, half-made gesture. 0 to 0.6.
+    public var halfFormed: Float = 0
+    /// The chance a frame loses the hand (bad light, a finger out of view, the frame edge).
+    public var dropout: Float = 0
+    /// The chance the hand works near the edge of the frame.
+    public var edge: Float = 0
+    /// Multiplies the joints' jitter (low or uneven light).
+    public var jointNoise: Float = 1
+
     public init() {}
 }
 
@@ -45,6 +63,7 @@ public struct SessionBuilder {
         self.options = options
         self.left = left
         person = Person.random(&g)
+        person.noise *= max(options.jointNoise, 0.1)
         // Palm length ≈ 9.5 cm; vertical field of view ≈ 55°.
         let viewHeight = 2 * Float(distanceCm) * tan(27.5 * .pi / 180)
         size = 9.5 / viewHeight * g.uniform(0.92, 1.08)
@@ -67,11 +86,15 @@ public struct SessionBuilder {
 
     mutating func play(_ seg: Segment) {
         let dt = 1 / options.fps
+        let duration = seg.duration / max(options.speed, 0.2)
+        // A lazy hand: every pose slumps part of the way toward relaxed.
+        let slump: HandShape? = options.halfFormed > 0 ? HandShape.make(.relaxed, &g) : nil
         var t = 0.0
-        while t < seg.duration {
-            let u = Float(t / max(seg.duration, 1e-6))
+        while t < duration {
+            let u = Float(t / max(duration, 1e-6))
             let e = seg.ease(u)
             var shape = HandShape.lerp(seg.fromShape, seg.toShape, e)
+            if let slump { shape = HandShape.lerp(shape, slump, min(options.halfFormed, 0.6)) }
             var cx = seg.from.0 + (seg.to.0 - seg.from.0) * e
             var cy = seg.from.1 + (seg.to.1 - seg.from.1) * e
             if let w = seg.wobble {
@@ -80,12 +103,12 @@ public struct SessionBuilder {
                 cy += wy * seg.size
             }
             // Tremor.
-            cx += g.gaussian() * 0.012 * seg.size
-            cy += g.gaussian() * 0.012 * seg.size
-            shape.roll += g.gaussian() * 0.6
+            cx += g.gaussian() * 0.012 * seg.size * options.tremor
+            cy += g.gaussian() * 0.012 * seg.size * options.tremor
+            shape.roll += g.gaussian() * (0.6 + options.wristTurn)
             var frame = Frame(time: time, aspect: options.aspect)
             frame.setFace(g.chance(0.97) ? jitteredFace() : nil)
-            if seg.visible {
+            if seg.visible && !(options.dropout > 0 && g.chance(options.dropout)) {
                 frame.handCount = 1
                 frame.hand0 = Synth.render(shape, center: (cx, cy), size: seg.size, left: left, person: person,
                                            aspect: options.aspect,
@@ -117,7 +140,12 @@ public struct SessionBuilder {
     }
 
     mutating func center() -> (Float, Float) {
-        (options.aspect * g.uniform(0.3, 0.7) + (left ? -0.1 : 0.1), g.uniform(0.35, 0.6))
+        if options.edge > 0 && g.chance(options.edge) {
+            // Working near the edge of the frame, where hands get cut off.
+            let x = g.chance(0.5) ? g.uniform(0.1, 0.2) : g.uniform(0.8, 0.9)
+            return (options.aspect * x, g.uniform(0.25, 0.75))
+        }
+        return (options.aspect * g.uniform(0.3, 0.7) + (left ? -0.1 : 0.1), g.uniform(0.35, 0.6))
     }
 
     /// Where the palm centre must be for the index fingertip to land on `target`.

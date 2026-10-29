@@ -87,7 +87,7 @@ actor GalaxyLink {
     func hello() async -> Bool {
         let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? ""
         return ok(await call("POST", "/v1/hello", body: [
-            "name": "Nebula", "version": version, "powers": ["gestures", "approvals"], "intro": Self.intro,
+            "name": "Nebula", "version": version, "powers": ["gestures", "approvals", "gesture_training"], "intro": Self.intro,
         ])) != nil
     }
 
@@ -127,6 +127,50 @@ actor GalaxyLink {
     func decide(_ id: String, approve: Bool) async -> Approval? {
         ok(await call("POST", "/v1/approvals/\(id)/decide", body: ["decision": approve ? "approve" : "reject", "via": "gesture"]))
             .flatMap { try? JSONDecoder().decode(Approval.self, from: $0) }
+    }
+
+    // MARK: - Training
+
+    /// An item Link hands Nebula. Only Galaxy Trainer's workouts ("workout") come here.
+    struct InboxItem: Codable {
+        let id: Int
+        let kind: String
+        let taskId: String
+        let text: String
+    }
+
+    /// Waits up to ~25 s for something new. nil when Link isn't there.
+    func inbox() async -> [InboxItem]? {
+        ok(await call("GET", "/v1/inbox?wait=25", timeout: 35)).flatMap { try? JSONDecoder().decode([InboxItem].self, from: $0) }
+    }
+
+    /// Nebula's answer to a workout: its results, as JSON.
+    @discardableResult
+    func practiceAnswer(id: String, answer: String) async -> Bool {
+        ok(await call("POST", "/v1/practice/\(id)/answer", body: ["answer": answer], timeout: 30)) != nil
+    }
+
+    /// What Galaxy Trainer has taught Nebula: the lessons switched on, and the latest workout results.
+    struct TrainingNotes: Sendable {
+        let lessons: [String]
+        let results: [String]
+    }
+
+    func training() async -> TrainingNotes? {
+        guard let data = ok(await call("GET", "/v1/training/nebula")),
+              let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return nil }
+        let lessons = (json["lessons"] as? [[String: Any]] ?? [])
+            .filter { ($0["active"] as? Bool) == true }
+            .compactMap { $0["text"] as? String }
+        let results = (json["thread"] as? [[String: Any]] ?? [])
+            .filter { ($0["kind"] as? String) == "results" }
+            .compactMap { $0["text"] as? String }
+        return TrainingNotes(lessons: lessons, results: Array(results.suffix(2)))
+    }
+
+    /// A line in Nebula's 1:1 with the trainer, which you can read in Galaxy Trainer.
+    func postToTrainer(_ text: String) async {
+        _ = await call("POST", "/v1/training/nebula/thread", body: ["kind": "message", "text": text])
     }
 
     // MARK: - Comet

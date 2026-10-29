@@ -127,6 +127,8 @@ final class Engine: ObservableObject {
             personalize()
         }
         Task { await self.galaxyLoop() }
+        Task { await self.inboxLoop() }
+        Task { await NebulaMind.shared.loop(engine: self) }
         Task { await self.approvalLoop() }
     }
 
@@ -489,6 +491,15 @@ final class Engine: ObservableObject {
 
     var currentModel: NebulaModel { model }
 
+    /// A model or tuning that measured better on your recordings (from a workout or
+    /// Nebula's mind): use it from now on.
+    func adoptTuned(_ tuned: NebulaModel, note line: String) {
+        model = tuned
+        try? ModelStore.save(tuned)
+        applyRecognizer()
+        note(line)
+    }
+
     // MARK: - Galaxy
 
     private func galaxyLoop() async {
@@ -496,6 +507,21 @@ final class Engine: ObservableObject {
             let ok = await GalaxyLink.shared.heartbeat()
             linkConnected = ok
             try? await Task.sleep(nanoseconds: 30_000_000_000)
+        }
+    }
+
+    /// Galaxy Trainer's workouts arrive here. Each runs in the background (WorkoutRunner),
+    /// so this loop, the heartbeat and the camera never wait on one.
+    private func inboxLoop() async {
+        while true {
+            if let items = await GalaxyLink.shared.inbox() {
+                for item in items where item.kind == "workout" {
+                    Task { await WorkoutRunner.shared.run(id: item.taskId, text: item.text, engine: self) }
+                }
+            } else {
+                // Link down, or too old to have an inbox for Nebula: try again in a while.
+                try? await Task.sleep(nanoseconds: 15_000_000_000)
+            }
         }
     }
 
